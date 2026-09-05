@@ -198,7 +198,7 @@
  *
  *  Enable: LV_USE_MATRIX
  */
-#define LV_USE_VECTOR_GRAPHIC 1
+#define LV_USE_VECTOR_GRAPHIC 0
 
 /** Render a widget and its children into an image buffer with lv_snapshot_take(). */
 #define LV_USE_SNAPSHOT 0
@@ -951,7 +951,7 @@
 #define LV_FONT_MONTSERRAT_8 0
 
 /** Montserrat 10 */
-#define LV_FONT_MONTSERRAT_10 0
+#define LV_FONT_MONTSERRAT_10 1
 
 /** Montserrat 12 */
 #define LV_FONT_MONTSERRAT_12 1

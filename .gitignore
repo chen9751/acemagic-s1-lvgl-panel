@@ -10,3 +10,5 @@ bin/
 
 # MacOS file
 .DS_Store
+
+config/ha.conf
