@@ -147,6 +147,7 @@ set(
     src/hal/hal.c
 
     ui/s1_ui.c
+    ui/fonts/s1_ui_font_14.c
 
     input/w1_input.c
 

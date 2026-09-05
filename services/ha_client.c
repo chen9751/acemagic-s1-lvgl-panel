@@ -582,3 +582,217 @@ int ha_toggle(
 
     return 0;
 }
+
+
+/* =========================================================
+ * Turn off every Home Assistant light entity
+ * ========================================================= */
+
+int ha_turn_off_all_lights(void)
+{
+    CURL *curl = curl_easy_init();
+
+    if(curl == NULL) {
+        return -1;
+    }
+
+    char url[512];
+
+    snprintf(
+        url,
+        sizeof(url),
+        "%s/api/services/light/turn_off",
+        ha_url
+    );
+
+    char auth_header[1024];
+
+    snprintf(
+        auth_header,
+        sizeof(auth_header),
+        "Authorization: Bearer %s",
+        ha_token
+    );
+
+    struct curl_slist *headers = NULL;
+
+    headers = curl_slist_append(headers, auth_header);
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    http_buffer_t response = {
+        .data = NULL,
+        .size = 0
+    };
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "{\"entity_id\":\"all\"}");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3L);
+
+    CURLcode result = curl_easy_perform(curl);
+
+    long response_code = 0;
+
+    curl_easy_getinfo(
+        curl,
+        CURLINFO_RESPONSE_CODE,
+        &response_code
+    );
+
+    free(response.data);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if(
+        result != CURLE_OK ||
+        response_code < 200 ||
+        response_code >= 300
+    ) {
+        printf(
+            "HA turn off all lights failed: %s (HTTP %ld)\n",
+            curl_easy_strerror(result),
+            response_code
+        );
+
+        return -1;
+    }
+
+    printf("HA turn off all lights\n");
+
+    return 0;
+}
+
+
+/* =========================================================
+ * Count light.* entities whose current state is "on"
+ * ========================================================= */
+
+int ha_count_on_lights(
+    int *count
+)
+{
+    if(count == NULL) {
+        return -1;
+    }
+
+    CURL *curl = curl_easy_init();
+
+    if(curl == NULL) {
+        return -1;
+    }
+
+    char url[512];
+
+    snprintf(
+        url,
+        sizeof(url),
+        "%s/api/states",
+        ha_url
+    );
+
+    char auth_header[1024];
+
+    snprintf(
+        auth_header,
+        sizeof(auth_header),
+        "Authorization: Bearer %s",
+        ha_token
+    );
+
+    struct curl_slist *headers = NULL;
+
+    headers = curl_slist_append(headers, auth_header);
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+
+    http_buffer_t response = {
+        .data = NULL,
+        .size = 0
+    };
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3L);
+
+    CURLcode result = curl_easy_perform(curl);
+
+    long response_code = 0;
+
+    curl_easy_getinfo(
+        curl,
+        CURLINFO_RESPONSE_CODE,
+        &response_code
+    );
+
+    if(
+        result != CURLE_OK ||
+        response.data == NULL ||
+        response_code < 200 ||
+        response_code >= 300
+    ) {
+        printf(
+            "HA light count failed: %s (HTTP %ld)\n",
+            curl_easy_strerror(result),
+            response_code
+        );
+
+        free(response.data);
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+
+        return -1;
+    }
+
+    int on_count = 0;
+    char *cursor = response.data;
+
+    while(
+        (
+            cursor = strstr(
+                cursor,
+                "\"entity_id\":\"light."
+            )
+        ) != NULL
+    ) {
+        char *next_entity = strstr(
+            cursor + 1,
+            "\"entity_id\":"
+        );
+
+        char *state = strstr(
+            cursor,
+            "\"state\":\"on\""
+        );
+
+        if(
+            state != NULL &&
+            (
+                next_entity == NULL ||
+                state < next_entity
+            )
+        ) {
+            on_count++;
+        }
+
+        cursor += strlen(
+            "\"entity_id\":\"light."
+        );
+    }
+
+    *count = on_count;
+
+    printf(
+        "HA lights on: %d\n",
+        on_count
+    );
+
+    free(response.data);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    return 0;
+}

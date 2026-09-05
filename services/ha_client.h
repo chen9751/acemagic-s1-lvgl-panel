@@ -13,4 +13,10 @@ int ha_toggle(
     const char *entity_id
 );
 
+int ha_turn_off_all_lights(void);
+
+int ha_count_on_lights(
+    int *count
+);
+
 #endif
