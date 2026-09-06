@@ -140,7 +140,8 @@ static int load_config(void)
             snprintf(
                 ha_url,
                 sizeof(ha_url),
-                "%s",
+                "%.*s",
+                (int)sizeof(ha_url) - 1,
                 line + 7
             );
         }
@@ -157,7 +158,8 @@ static int load_config(void)
             snprintf(
                 ha_token,
                 sizeof(ha_token),
-                "%s",
+                "%.*s",
+                (int)sizeof(ha_token) - 1,
                 line + 9
             );
         }
@@ -427,36 +429,28 @@ int ha_get_state(
 }
 
 
-/* =========================================================
- * Toggle
- * ========================================================= */
-
-int ha_toggle(
-    const char *entity_id
+static int post_light_service(
+    const char *service,
+    const char *body
 )
 {
-    CURL *curl =
-        curl_easy_init();
-
+    CURL *curl = curl_easy_init();
 
     if(curl == NULL) {
         return -1;
     }
 
-
     char url[512];
-
 
     snprintf(
         url,
         sizeof(url),
-        "%s/api/services/light/toggle",
-        ha_url
+        "%s/api/services/light/%s",
+        ha_url,
+        service
     );
 
-
     char auth_header[1024];
-
 
     snprintf(
         auth_header,
@@ -465,26 +459,61 @@ int ha_toggle(
         ha_token
     );
 
-
     struct curl_slist *headers = NULL;
 
+    headers = curl_slist_append(headers, auth_header);
+    headers = curl_slist_append(headers, "Content-Type: application/json");
 
-    headers =
-        curl_slist_append(
-            headers,
-            auth_header
+    http_buffer_t response = {
+        .data = NULL,
+        .size = 0
+    };
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3L);
+
+    CURLcode result = curl_easy_perform(curl);
+    long response_code = 0;
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+
+    free(response.data);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if(
+        result != CURLE_OK ||
+        response_code < 200 ||
+        response_code >= 300
+    ) {
+        printf(
+            "HA light.%s failed: %s (HTTP %ld)\n",
+            service,
+            curl_easy_strerror(result),
+            response_code
         );
 
+        return -1;
+    }
 
-    headers =
-        curl_slist_append(
-            headers,
-            "Content-Type: application/json"
-        );
+    return 0;
+}
 
 
+/* =========================================================
+ * Light controls
+ * ========================================================= */
+
+int ha_toggle(
+    const char *entity_id
+)
+{
     char body[512];
-
 
     snprintf(
         body,
@@ -493,94 +522,52 @@ int ha_toggle(
         entity_id
     );
 
-
-    http_buffer_t response = {
-        .data = NULL,
-        .size = 0
-    };
+    return post_light_service("toggle", body);
+}
 
 
-    curl_easy_setopt(
-        curl,
-        CURLOPT_URL,
-        url
-    );
-
-
-    curl_easy_setopt(
-        curl,
-        CURLOPT_HTTPHEADER,
-        headers
-    );
-
-
-    curl_easy_setopt(
-        curl,
-        CURLOPT_POST,
-        1L
-    );
-
-
-    curl_easy_setopt(
-        curl,
-        CURLOPT_POSTFIELDS,
-        body
-    );
-
-
-    curl_easy_setopt(
-        curl,
-        CURLOPT_WRITEFUNCTION,
-        write_callback
-    );
-
-
-    curl_easy_setopt(
-        curl,
-        CURLOPT_WRITEDATA,
-        &response
-    );
-
-
-    curl_easy_setopt(
-        curl,
-        CURLOPT_TIMEOUT,
-        3L
-    );
-
-
-    CURLcode result =
-        curl_easy_perform(curl);
-
-
-    if(result != CURLE_OK) {
-
-        printf(
-            "HA toggle failed: %s\n",
-            curl_easy_strerror(result)
-        );
-
-
-        free(response.data);
-        curl_slist_free_all(headers);
-        curl_easy_cleanup(curl);
-
-        return -1;
+int ha_set_light_brightness(
+    const char *entity_id,
+    int brightness_percent
+)
+{
+    if(brightness_percent < 0) {
+        brightness_percent = 0;
+    }
+    else if(brightness_percent > 100) {
+        brightness_percent = 100;
     }
 
+    char body[512];
 
-    printf(
-        "HA toggle: %s\n",
-        entity_id
+    snprintf(
+        body,
+        sizeof(body),
+        "{\"entity_id\":\"%s\",\"brightness_pct\":%d}",
+        entity_id,
+        brightness_percent
     );
 
-
-    free(response.data);
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    return post_light_service("turn_on", body);
+}
 
 
-    return 0;
+int ha_set_light_color_temperature(
+    const char *entity_id,
+    int color_temperature_kelvin
+)
+{
+    char body[512];
+
+    snprintf(
+        body,
+        sizeof(body),
+        "{\"entity_id\":\"%s\",\"color_temp_kelvin\":%d}",
+        entity_id,
+        color_temperature_kelvin
+    );
+
+    return post_light_service("turn_on", body);
 }
 
 

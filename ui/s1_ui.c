@@ -109,36 +109,113 @@ typedef enum {
 } ha_item_id_t;
 
 
+typedef enum {
+    HA_ADJUST_BRIGHTNESS = 0,
+    HA_ADJUST_COLOR_TEMPERATURE
+} ha_adjust_mode_t;
+
+
 typedef struct {
     const char *name;
     const char *icon;
     const char *entity_id;
     bool is_light;
+    bool is_adjustable;
     bool is_on;
+    int brightness;
+    int color_temperature;
     char state[20];
     lv_obj_t *row;
     lv_obj_t *icon_label;
     lv_obj_t *name_label;
     lv_obj_t *state_label;
+    lv_obj_t *control_mode_label;
+    lv_obj_t *control_value_label;
+    lv_obj_t *control_bar;
 } ha_item_t;
 
 
 static ha_item_t ha_items[HA_ITEM_COUNT] = {
-    { "关闭所有灯光", HA_ICON_POWER,   NULL,           false, false, "-- 盏亮", NULL, NULL, NULL, NULL },
-    { "客厅灯",       HA_ICON_LIGHT,   NULL,           true,  false, "--",      NULL, NULL, NULL, NULL },
-    { "书房灯",       HA_ICON_LIGHT,   HA_STUDY_LIGHT, true,  false, "--",      NULL, NULL, NULL, NULL },
-    { "卧室灯",       HA_ICON_LIGHT,   NULL,           true,  false, "--",      NULL, NULL, NULL, NULL },
-    { "床头灯",       HA_ICON_LIGHT,   NULL,           true,  false, "--",      NULL, NULL, NULL, NULL },
-    { "小卧室灯",     HA_ICON_LIGHT,   NULL,           true,  false, "--",      NULL, NULL, NULL, NULL },
-    { "阳台灯",       HA_ICON_LIGHT,   NULL,           true,  false, "--",      NULL, NULL, NULL, NULL },
-    { "浴室灯",       HA_ICON_LIGHT,   NULL,           true,  false, "--",      NULL, NULL, NULL, NULL },
-    { "空调",         HA_ICON_AC,      NULL,           false, false, "--",      NULL, NULL, NULL, NULL },
-    { "窗帘",         HA_ICON_CURTAIN, NULL,           false, false, "--",      NULL, NULL, NULL, NULL },
-    { "浴霸",         HA_ICON_HEATER,  NULL,           false, false, "--",      NULL, NULL, NULL, NULL }
+    {
+        .name = "关闭所有灯光",
+        .icon = HA_ICON_POWER,
+        .state = "-- 盏亮"
+    },
+    {
+        .name = "客厅灯",
+        .icon = HA_ICON_LIGHT,
+        .is_light = true,
+        .is_adjustable = true,
+        .brightness = 50,
+        .color_temperature = 50,
+        .state = "OFF"
+    },
+    {
+        .name = "书房灯",
+        .icon = HA_ICON_LIGHT,
+        .entity_id = HA_STUDY_LIGHT,
+        .is_light = true,
+        .is_adjustable = true,
+        .brightness = 50,
+        .color_temperature = 50,
+        .state = "OFF"
+    },
+    {
+        .name = "卧室灯",
+        .icon = HA_ICON_LIGHT,
+        .is_light = true,
+        .is_adjustable = true,
+        .brightness = 50,
+        .color_temperature = 50,
+        .state = "OFF"
+    },
+    {
+        .name = "床头灯",
+        .icon = HA_ICON_LIGHT,
+        .is_light = true,
+        .state = "OFF"
+    },
+    {
+        .name = "小卧室灯",
+        .icon = HA_ICON_LIGHT,
+        .is_light = true,
+        .is_adjustable = true,
+        .brightness = 50,
+        .color_temperature = 50,
+        .state = "OFF"
+    },
+    {
+        .name = "阳台灯",
+        .icon = HA_ICON_LIGHT,
+        .is_light = true,
+        .state = "OFF"
+    },
+    {
+        .name = "浴室灯",
+        .icon = HA_ICON_LIGHT,
+        .is_light = true,
+        .state = "OFF"
+    },
+    {
+        .name = "空调",
+        .icon = HA_ICON_AC,
+        .state = "--"
+    },
+    {
+        .name = "窗帘",
+        .icon = HA_ICON_CURTAIN,
+        .state = "--"
+    },
+    {
+        .name = "浴霸",
+        .icon = HA_ICON_HEATER,
+        .state = "--"
+    }
 };
 
 
 static int ha_selected = 0;
+static ha_adjust_mode_t ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
 
 
 /* =========================================================
@@ -388,19 +465,82 @@ static void create_ha_row(
     item->icon_label = lv_label_create(item->row);
     lv_label_set_text(item->icon_label, item->icon);
     lv_obj_set_style_text_font(item->icon_label, &s1_ui_font_14, 0);
-    lv_obj_align(item->icon_label, LV_ALIGN_LEFT_MID, 7, 0);
+    lv_obj_align(item->icon_label, LV_ALIGN_TOP_LEFT, 7, 9);
 
     item->name_label = lv_label_create(item->row);
     lv_label_set_text(item->name_label, item->name);
     lv_obj_set_style_text_font(item->name_label, &s1_ui_font_14, 0);
     lv_obj_set_style_text_color(item->name_label, lv_color_hex(0xDCE4EA), 0);
-    lv_obj_align(item->name_label, LV_ALIGN_LEFT_MID, 29, 0);
+    lv_obj_align(item->name_label, LV_ALIGN_TOP_LEFT, 29, 8);
 
     item->state_label = lv_label_create(item->row);
     lv_label_set_text(item->state_label, item->state);
     lv_obj_set_style_text_font(item->state_label, &s1_ui_font_14, 0);
     lv_obj_set_style_text_color(item->state_label, lv_color_hex(0x7F8A95), 0);
-    lv_obj_align(item->state_label, LV_ALIGN_RIGHT_MID, -7, 0);
+    lv_obj_align(item->state_label, LV_ALIGN_TOP_RIGHT, -7, 8);
+
+    if(!item->is_adjustable) {
+        return;
+    }
+
+    item->control_mode_label = lv_label_create(item->row);
+    lv_label_set_text(item->control_mode_label, "亮度");
+    lv_obj_set_style_text_font(
+        item->control_mode_label,
+        &s1_ui_font_14,
+        0
+    );
+    lv_obj_set_style_text_color(
+        item->control_mode_label,
+        lv_color_hex(0x82919C),
+        0
+    );
+    lv_obj_set_pos(item->control_mode_label, 7, 35);
+
+    item->control_value_label = lv_label_create(item->row);
+    lv_label_set_text(item->control_value_label, "50%");
+    lv_obj_set_style_text_font(
+        item->control_value_label,
+        &lv_font_montserrat_10,
+        0
+    );
+    lv_obj_set_style_text_color(
+        item->control_value_label,
+        lv_color_hex(0xC8D3DA),
+        0
+    );
+    lv_obj_align(item->control_value_label, LV_ALIGN_TOP_RIGHT, -7, 37);
+
+    item->control_bar = lv_bar_create(item->row);
+    lv_obj_set_size(item->control_bar, 124, 5);
+    lv_obj_set_pos(item->control_bar, 7, 54);
+    lv_bar_set_range(item->control_bar, 0, 100);
+    lv_bar_set_value(item->control_bar, item->brightness, LV_ANIM_OFF);
+    lv_obj_set_style_radius(item->control_bar, 3, LV_PART_MAIN);
+    lv_obj_set_style_radius(item->control_bar, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(
+        item->control_bar,
+        lv_color_hex(0x26323A),
+        LV_PART_MAIN
+    );
+    lv_obj_set_style_bg_opa(item->control_bar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(
+        item->control_bar,
+        lv_color_hex(HA_COLOR_BLUE),
+        LV_PART_INDICATOR
+    );
+
+    set_hidden(item->control_mode_label, true);
+    set_hidden(item->control_value_label, true);
+    set_hidden(item->control_bar, true);
+}
+
+
+static int ha_color_temperature_kelvin(
+    const ha_item_t *item
+)
+{
+    return 2700 + item->color_temperature * 38;
 }
 
 
@@ -409,8 +549,22 @@ static void update_ha_rows(void)
     for(int i = 0; i < HA_ITEM_COUNT; i++) {
         ha_item_t *item = &ha_items[i];
         bool selected = i == ha_selected;
+        bool expanded =
+            selected &&
+            item->is_adjustable &&
+            item->is_on;
+
+        if(item->is_light) {
+            snprintf(
+                item->state,
+                sizeof(item->state),
+                "%s",
+                item->is_on ? "ON" : "OFF"
+            );
+        }
 
         lv_label_set_text(item->state_label, item->state);
+        lv_obj_set_height(item->row, expanded ? 68 : 34);
         lv_obj_set_style_bg_color(item->row, lv_color_hex(HA_COLOR_SELECTED), 0);
         lv_obj_set_style_bg_opa(
             item->row,
@@ -436,12 +590,63 @@ static void update_ha_rows(void)
         else if(item->is_light && item->is_on) {
             icon_color = lv_color_hex(HA_COLOR_LIGHT_ON);
         }
-
-        if(selected) {
+        else if(selected || !item->is_light) {
             icon_color = lv_color_hex(HA_COLOR_BLUE);
         }
 
         lv_obj_set_style_text_color(item->icon_label, icon_color, 0);
+
+        if(!item->is_adjustable) {
+            continue;
+        }
+
+        if(expanded) {
+            char control_value[16];
+            int value;
+
+            set_hidden(item->control_mode_label, false);
+            set_hidden(item->control_value_label, false);
+            set_hidden(item->control_bar, false);
+
+            if(ha_adjust_mode == HA_ADJUST_COLOR_TEMPERATURE) {
+                value = item->color_temperature;
+                lv_label_set_text(item->control_mode_label, "色温");
+                snprintf(
+                    control_value,
+                    sizeof(control_value),
+                    "%dK",
+                    ha_color_temperature_kelvin(item)
+                );
+                lv_obj_set_style_bg_color(
+                    item->control_bar,
+                    lv_color_hex(0xF2B15C),
+                    LV_PART_INDICATOR
+                );
+            }
+            else {
+                value = item->brightness;
+                lv_label_set_text(item->control_mode_label, "亮度");
+                snprintf(
+                    control_value,
+                    sizeof(control_value),
+                    "%d%%",
+                    item->brightness
+                );
+                lv_obj_set_style_bg_color(
+                    item->control_bar,
+                    lv_color_hex(HA_COLOR_BLUE),
+                    LV_PART_INDICATOR
+                );
+            }
+
+            lv_label_set_text(item->control_value_label, control_value);
+            lv_bar_set_value(item->control_bar, value, LV_ANIM_ON);
+        }
+        else {
+            set_hidden(item->control_mode_label, true);
+            set_hidden(item->control_value_label, true);
+            set_hidden(item->control_bar, true);
+        }
     }
 
     lv_obj_update_layout(ha_panel);
@@ -492,6 +697,25 @@ static void refresh_ha_states(void)
 }
 
 
+static void update_ha_light_count_from_items(void)
+{
+    int count = 0;
+
+    for(int i = 0; i < HA_ITEM_COUNT; i++) {
+        if(ha_items[i].is_light && ha_items[i].is_on) {
+            count++;
+        }
+    }
+
+    snprintf(
+        ha_items[HA_ITEM_ALL_OFF].state,
+        sizeof(ha_items[HA_ITEM_ALL_OFF].state),
+        "%d 盏亮",
+        count
+    );
+}
+
+
 static void activate_ha_item(void)
 {
     if(ha_selected == HA_ITEM_ALL_OFF) {
@@ -523,7 +747,16 @@ static void activate_ha_item(void)
 
     ha_item_t *item = &ha_items[ha_selected];
 
+    if(!item->is_light) {
+        return;
+    }
+
+    ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
+
     if(item->entity_id == NULL) {
+        item->is_on = !item->is_on;
+        update_ha_light_count_from_items();
+        update_ha_rows();
         return;
     }
 
@@ -532,6 +765,79 @@ static void activate_ha_item(void)
     }
 
     refresh_ha_states();
+}
+
+
+static void toggle_ha_adjust_mode(void)
+{
+    ha_item_t *item = &ha_items[ha_selected];
+
+    if(!item->is_adjustable || !item->is_on) {
+        return;
+    }
+
+    ha_adjust_mode =
+        ha_adjust_mode == HA_ADJUST_BRIGHTNESS
+        ? HA_ADJUST_COLOR_TEMPERATURE
+        : HA_ADJUST_BRIGHTNESS;
+
+    update_ha_rows();
+}
+
+
+static void adjust_ha_item(
+    int delta
+)
+{
+    ha_item_t *item = &ha_items[ha_selected];
+
+    if(!item->is_adjustable || !item->is_on) {
+        return;
+    }
+
+    int *value =
+        ha_adjust_mode == HA_ADJUST_BRIGHTNESS
+        ? &item->brightness
+        : &item->color_temperature;
+    int minimum =
+        ha_adjust_mode == HA_ADJUST_BRIGHTNESS
+        ? 10
+        : 0;
+    int next = *value + delta;
+
+    if(next < minimum) {
+        next = minimum;
+    }
+    else if(next > 100) {
+        next = 100;
+    }
+
+    if(next == *value) {
+        return;
+    }
+
+    if(item->entity_id != NULL) {
+        int result;
+
+        if(ha_adjust_mode == HA_ADJUST_BRIGHTNESS) {
+            result = ha_set_light_brightness(item->entity_id, next);
+        }
+        else {
+            int kelvin = 2700 + next * 38;
+
+            result = ha_set_light_color_temperature(
+                item->entity_id,
+                kelvin
+            );
+        }
+
+        if(result != 0) {
+            return;
+        }
+    }
+
+    *value = next;
+    update_ha_rows();
 }
 
 
@@ -1098,21 +1404,30 @@ void s1_ui_key(uint32_t key)
     }
 
     if(key == S1_KEY_MENU) {
-        if(current_page != PAGE_HA) {
+        if(current_page == PAGE_HA) {
+            toggle_ha_adjust_mode();
+        }
+        else {
             lv_label_set_text(footer_label, "MENU");
         }
         return;
     }
 
     if(key == S1_KEY_VOL_UP) {
-        if(current_page != PAGE_HA) {
+        if(current_page == PAGE_HA) {
+            adjust_ha_item(10);
+        }
+        else {
             lv_label_set_text(footer_label, "VOL +");
         }
         return;
     }
 
     if(key == S1_KEY_VOL_DOWN) {
-        if(current_page != PAGE_HA) {
+        if(current_page == PAGE_HA) {
+            adjust_ha_item(-10);
+        }
+        else {
             lv_label_set_text(footer_label, "VOL -");
         }
         return;
@@ -1123,6 +1438,7 @@ void s1_ui_key(uint32_t key)
             ha_selected =
                 (ha_selected + HA_ITEM_COUNT - 1)
                 % HA_ITEM_COUNT;
+            ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
             update_ha_rows();
             return;
         }
@@ -1131,6 +1447,7 @@ void s1_ui_key(uint32_t key)
             ha_selected =
                 (ha_selected + 1)
                 % HA_ITEM_COUNT;
+            ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
             update_ha_rows();
             return;
         }

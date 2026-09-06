@@ -13,6 +13,16 @@ int ha_toggle(
     const char *entity_id
 );
 
+int ha_set_light_brightness(
+    const char *entity_id,
+    int brightness_percent
+);
+
+int ha_set_light_color_temperature(
+    const char *entity_id,
+    int color_temperature_kelvin
+);
+
 int ha_turn_off_all_lights(void);
 
 int ha_count_on_lights(
