@@ -147,6 +147,8 @@ set(
     src/hal/hal.c
 
     ui/s1_ui.c
+    ui/fonts/s1_home_info_font_14.c
+    ui/fonts/s1_home_time_font_108.c
     ui/fonts/s1_ui_font_14.c
     ui/fonts/s1_led_font_12.c
 

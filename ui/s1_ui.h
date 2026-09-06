@@ -24,6 +24,10 @@ typedef void (*s1_music_action_cb_t)(
 
 void s1_ui_init(void);
 void s1_ui_key(uint32_t key);
+void s1_ui_home_set_weather(
+    int temperature_c,
+    int rain_probability_percent
+);
 void s1_ui_music_set_action_cb(
     s1_music_action_cb_t callback,
     void *user_data

@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define SCREEN_W 170
 #define SCREEN_H 320
@@ -34,8 +35,13 @@
 #define LED_COLOR_SELECTED  0x18374A
 #define LED_COLOR_ERROR     0xEF7D72
 
+#define HOME_COLOR_BLUE    0x18B9D9
+#define HOME_COLOR_MINUTE  0x83929D
+
 LV_FONT_DECLARE(s1_ui_font_14);
 LV_FONT_DECLARE(s1_led_font_12);
+LV_FONT_DECLARE(s1_home_time_font_108);
+LV_FONT_DECLARE(s1_home_info_font_14);
 
 
 /* =========================================================
@@ -58,7 +64,7 @@ typedef struct {
 
 
 static const page_config_t pages[PAGE_COUNT] = {
-    { "HOME",     "Watch face"    },
+    { "",         ""              },
     { "",         "HomeAssistant" },
     { "",         "Music"         },
     { "",         "LED"           }
@@ -66,6 +72,21 @@ static const page_config_t pages[PAGE_COUNT] = {
 
 
 static page_id_t current_page = PAGE_HOME;
+
+
+/* =========================================================
+ * Home watch face
+ * ========================================================= */
+
+static const char *weekday_names[] = {
+    "星期日",
+    "星期一",
+    "星期二",
+    "星期三",
+    "星期四",
+    "星期五",
+    "星期六"
+};
 
 
 /* =========================================================
@@ -189,6 +210,14 @@ static lv_obj_t *page_label;
 static lv_obj_t *center_panel;
 static lv_obj_t *center_text;
 static lv_obj_t *footer_label;
+static lv_obj_t *home_panel;
+static lv_obj_t *home_hour_label;
+static lv_obj_t *home_minute_label;
+static lv_obj_t *home_period_label;
+static lv_obj_t *home_date_label;
+static lv_obj_t *home_weekday_label;
+static lv_obj_t *home_temperature_label;
+static lv_obj_t *home_rain_label;
 static lv_obj_t *ha_panel;
 static lv_obj_t *music_panel;
 static lv_obj_t *music_info_box;
@@ -230,6 +259,93 @@ static void show_standard_content(bool visible)
     set_hidden(ha_panel, visible);
     set_hidden(music_panel, true);
     set_hidden(led_panel, true);
+    set_hidden(home_panel, true);
+}
+
+
+/* =========================================================
+ * Home watch face UI
+ * ========================================================= */
+
+static void update_home_clock(lv_timer_t *timer)
+{
+    (void)timer;
+
+    time_t now = time(NULL);
+    struct tm *local = localtime(&now);
+
+    if(local == NULL) {
+        return;
+    }
+
+    int hour = local->tm_hour % 12;
+
+    if(hour == 0) {
+        hour = 12;
+    }
+
+    char hour_text[4];
+    char minute_text[4];
+    char date_text[20];
+
+    snprintf(hour_text, sizeof(hour_text), "%02d", hour);
+    snprintf(minute_text, sizeof(minute_text), "%02d", local->tm_min);
+    snprintf(
+        date_text,
+        sizeof(date_text),
+        "%d月%d日",
+        local->tm_mon + 1,
+        local->tm_mday
+    );
+
+    lv_label_set_text(home_hour_label, hour_text);
+    lv_label_set_text(home_minute_label, minute_text);
+    lv_label_set_text(
+        home_period_label,
+        local->tm_hour < 12 ? "AM" : "PM"
+    );
+    lv_label_set_text(home_date_label, date_text);
+    lv_label_set_text(
+        home_weekday_label,
+        weekday_names[local->tm_wday]
+    );
+}
+
+
+void s1_ui_home_set_weather(
+    int temperature_c,
+    int rain_probability_percent
+)
+{
+    if(home_panel == NULL) {
+        return;
+    }
+
+    if(rain_probability_percent < 0) {
+        rain_probability_percent = 0;
+    }
+    else if(rain_probability_percent > 100) {
+        rain_probability_percent = 100;
+    }
+
+    char temperature_text[12];
+    char rain_text[20];
+
+    snprintf(
+        temperature_text,
+        sizeof(temperature_text),
+        "%d°",
+        temperature_c
+    );
+    snprintf(
+        rain_text,
+        sizeof(rain_text),
+        "降雨 %d%%",
+        rain_probability_percent
+    );
+
+    lv_label_set_text(home_temperature_label, temperature_text);
+    lv_label_set_text(home_rain_label, rain_text);
 }
 
 
@@ -885,6 +1001,21 @@ static void update_page(void)
 
     lv_label_set_text(page_label, page_buf);
 
+    if(current_page == PAGE_HOME) {
+        set_hidden(subtitle_label, true);
+        set_hidden(title_label, true);
+        set_hidden(center_panel, true);
+        set_hidden(footer_label, true);
+        set_hidden(ha_panel, true);
+        set_hidden(music_panel, true);
+        set_hidden(led_panel, true);
+        set_hidden(home_panel, false);
+        update_home_clock(NULL);
+        return;
+    }
+
+    set_hidden(subtitle_label, false);
+
     if(current_page == PAGE_HA) {
         show_standard_content(false);
         lv_obj_set_style_text_color(subtitle_label, lv_color_hex(HA_COLOR_BLUE), 0);
@@ -899,6 +1030,7 @@ static void update_page(void)
         set_hidden(footer_label, true);
         set_hidden(ha_panel, true);
         set_hidden(music_panel, false);
+        set_hidden(home_panel, true);
         lv_obj_set_style_text_color(
             subtitle_label,
             lv_color_hex(MUSIC_COLOR_BLUE),
@@ -920,6 +1052,7 @@ static void update_page(void)
         set_hidden(ha_panel, true);
         set_hidden(music_panel, true);
         set_hidden(led_panel, false);
+        set_hidden(home_panel, true);
         lv_obj_set_style_text_color(
             subtitle_label,
             lv_color_hex(LED_COLOR_BLUE),
@@ -938,16 +1071,6 @@ static void update_page(void)
     lv_obj_set_style_text_color(subtitle_label, lv_color_hex(0x707785), 0);
     lv_obj_set_style_text_font(subtitle_label, &lv_font_montserrat_10, 0);
     lv_label_set_text(title_label, pages[current_page].name);
-
-    switch(current_page) {
-        case PAGE_HOME:
-            lv_label_set_text(center_text, "00:00\n\nWatch Face");
-            lv_label_set_text(footer_label, "HOME");
-            break;
-
-        default:
-            break;
-    }
 
     lv_obj_set_style_text_align(center_text, LV_TEXT_ALIGN_CENTER, 0);
 }
@@ -1150,6 +1273,123 @@ void s1_ui_init(void)
     lv_obj_set_style_text_color(footer_label, lv_color_hex(0x818998), 0);
     lv_obj_set_style_text_font(footer_label, &lv_font_montserrat_10, 0);
     lv_obj_align(footer_label, LV_ALIGN_BOTTOM_MID, 0, -2);
+
+    home_panel = lv_obj_create(root);
+    lv_obj_set_size(home_panel, 146, 278);
+    lv_obj_align(home_panel, LV_ALIGN_TOP_MID, 0, 18);
+    lv_obj_set_scrollable(home_panel, false);
+    lv_obj_set_style_bg_opa(home_panel, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(home_panel, 0, 0);
+    lv_obj_set_style_pad_all(home_panel, 0, 0);
+
+    home_hour_label = lv_label_create(home_panel);
+    lv_label_set_text(home_hour_label, "12");
+    lv_obj_set_size(home_hour_label, 146, LV_SIZE_CONTENT);
+    lv_obj_set_pos(home_hour_label, 0, 0);
+    lv_obj_set_style_text_align(home_hour_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(home_hour_label, lv_color_hex(0xF8FBFD), 0);
+    lv_obj_set_style_text_font(
+        home_hour_label,
+        &s1_home_time_font_108,
+        0
+    );
+    lv_obj_set_style_text_letter_space(home_hour_label, -4, 0);
+
+    home_minute_label = lv_label_create(home_panel);
+    lv_label_set_text(home_minute_label, "00");
+    lv_obj_set_size(home_minute_label, 146, LV_SIZE_CONTENT);
+    lv_obj_set_pos(home_minute_label, 0, 100);
+    lv_obj_set_style_text_align(home_minute_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(
+        home_minute_label,
+        lv_color_hex(HOME_COLOR_MINUTE),
+        0
+    );
+    lv_obj_set_style_text_font(
+        home_minute_label,
+        &s1_home_time_font_108,
+        0
+    );
+    lv_obj_set_style_text_letter_space(home_minute_label, -4, 0);
+
+    home_period_label = lv_label_create(home_panel);
+    lv_label_set_text(home_period_label, "AM");
+    lv_obj_set_style_text_color(
+        home_period_label,
+        lv_color_hex(HOME_COLOR_BLUE),
+        0
+    );
+    lv_obj_set_style_text_font(home_period_label, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_letter_space(home_period_label, 1, 0);
+    lv_obj_align(home_period_label, LV_ALIGN_TOP_RIGHT, -3, 207);
+
+    home_date_label = lv_label_create(home_panel);
+    lv_label_set_text(home_date_label, "--月--日");
+    lv_obj_set_width(home_date_label, 68);
+    lv_obj_set_pos(home_date_label, 0, 228);
+    lv_obj_set_style_text_color(home_date_label, lv_color_hex(0xE2E9EE), 0);
+    lv_obj_set_style_text_font(home_date_label, &s1_home_info_font_14, 0);
+
+    home_weekday_label = lv_label_create(home_panel);
+    lv_label_set_text(home_weekday_label, "星期--");
+    lv_obj_set_width(home_weekday_label, 68);
+    lv_obj_set_pos(home_weekday_label, 0, 250);
+    lv_obj_set_style_text_color(
+        home_weekday_label,
+        lv_color_hex(0x71818D),
+        0
+    );
+    lv_obj_set_style_text_font(
+        home_weekday_label,
+        &s1_home_info_font_14,
+        0
+    );
+
+    lv_obj_t *home_weather_icon = lv_label_create(home_panel);
+    lv_label_set_text(home_weather_icon, LV_SYMBOL_TINT);
+    lv_obj_set_pos(home_weather_icon, 77, 228);
+    lv_obj_set_style_text_color(
+        home_weather_icon,
+        lv_color_hex(HOME_COLOR_BLUE),
+        0
+    );
+    lv_obj_set_style_text_font(
+        home_weather_icon,
+        &lv_font_montserrat_14,
+        0
+    );
+
+    home_temperature_label = lv_label_create(home_panel);
+    lv_label_set_text(home_temperature_label, "--°");
+    lv_obj_set_width(home_temperature_label, 51);
+    lv_obj_set_pos(home_temperature_label, 95, 228);
+    lv_obj_set_style_text_align(
+        home_temperature_label,
+        LV_TEXT_ALIGN_RIGHT,
+        0
+    );
+    lv_obj_set_style_text_color(
+        home_temperature_label,
+        lv_color_hex(0xE2E9EE),
+        0
+    );
+    lv_obj_set_style_text_font(
+        home_temperature_label,
+        &s1_home_info_font_14,
+        0
+    );
+
+    home_rain_label = lv_label_create(home_panel);
+    lv_label_set_text(home_rain_label, "降雨 --%");
+    lv_obj_set_width(home_rain_label, 69);
+    lv_obj_set_pos(home_rain_label, 77, 250);
+    lv_obj_set_style_text_align(home_rain_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_style_text_color(
+        home_rain_label,
+        lv_color_hex(0x71818D),
+        0
+    );
+    lv_obj_set_style_text_font(home_rain_label, &s1_home_info_font_14, 0);
 
     ha_panel = lv_obj_create(root);
     lv_obj_set_size(ha_panel, 146, 268);
@@ -1369,6 +1609,8 @@ void s1_ui_init(void)
     for(int index = 0; index < LED_ITEM_COUNT; index++) {
         create_led_row(&led_items[index], index);
     }
+
+    lv_timer_create(update_home_clock, 1000, NULL);
 
     update_page();
 }
