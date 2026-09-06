@@ -1335,6 +1335,7 @@ static void update_page(void)
         set_hidden(center_panel, true);
         set_hidden(footer_label, true);
         set_hidden(ha_panel, true);
+        set_hidden(led_panel, true);
         set_hidden(music_panel, false);
         set_hidden(home_panel, true);
         lv_obj_set_style_text_color(
