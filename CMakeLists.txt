@@ -148,10 +148,12 @@ set(
 
     ui/s1_ui.c
     ui/fonts/s1_ui_font_14.c
+    ui/fonts/s1_led_font_12.c
 
     input/w1_input.c
 
     services/ha_client.c
+    services/led_client.c
 )
 
 

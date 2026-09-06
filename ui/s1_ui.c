@@ -1,5 +1,6 @@
 #include "s1_ui.h"
 #include "../services/ha_client.h"
+#include "../services/led_client.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -29,7 +30,12 @@
 #define MUSIC_COLOR_BUTTON    0x121A25
 #define MUSIC_COLOR_SELECTED  0x0D7088
 
+#define LED_COLOR_BLUE      0x18B9D9
+#define LED_COLOR_SELECTED  0x18374A
+#define LED_COLOR_ERROR     0xEF7D72
+
 LV_FONT_DECLARE(s1_ui_font_14);
+LV_FONT_DECLARE(s1_led_font_12);
 
 
 /* =========================================================
@@ -40,7 +46,7 @@ typedef enum {
     PAGE_HOME = 0,
     PAGE_HA,
     PAGE_MUSIC,
-    PAGE_SETTINGS,
+    PAGE_LED,
     PAGE_COUNT
 } page_id_t;
 
@@ -55,7 +61,7 @@ static const page_config_t pages[PAGE_COUNT] = {
     { "HOME",     "Watch face"    },
     { "",         "HomeAssistant" },
     { "",         "Music"         },
-    { "SETTINGS", "System"        }
+    { "",         "LED"           }
 };
 
 
@@ -141,6 +147,38 @@ static void *music_action_user_data;
 
 
 /* =========================================================
+ * LED mode page
+ * ========================================================= */
+
+typedef struct {
+    led_mode_t mode;
+    const char *name;
+    const char *subtitle;
+    const char *icon;
+    lv_obj_t *row;
+    lv_obj_t *icon_label;
+    lv_obj_t *name_label;
+    lv_obj_t *subtitle_label;
+    lv_obj_t *status_label;
+} led_item_t;
+
+
+static led_item_t led_items[] = {
+    { LED_MODE_RAINBOW,     "Rainbow",     "彩虹",     LV_SYMBOL_TINT,     NULL, NULL, NULL, NULL, NULL },
+    { LED_MODE_BREATHING,   "Breathing",   "呼吸",     LV_SYMBOL_LOOP,     NULL, NULL, NULL, NULL, NULL },
+    { LED_MODE_COLOR_CYCLE, "Color Cycle", "颜色循环", LV_SYMBOL_REFRESH,  NULL, NULL, NULL, NULL, NULL },
+    { LED_MODE_AUTOMATIC,   "Automatic",   "自动",     LV_SYMBOL_SETTINGS, NULL, NULL, NULL, NULL, NULL },
+    { LED_MODE_OFF,         "Off",         "关闭",     LV_SYMBOL_POWER,    NULL, NULL, NULL, NULL, NULL }
+};
+
+#define LED_ITEM_COUNT ((int)(sizeof(led_items) / sizeof(led_items[0])))
+
+static int led_selected = 1;
+static int led_active = 1;
+static int led_error = -1;
+
+
+/* =========================================================
  * UI objects
  * ========================================================= */
 
@@ -168,6 +206,7 @@ static lv_obj_t *music_elapsed_label;
 static lv_obj_t *music_duration_label;
 static lv_obj_t *music_control_buttons[MUSIC_CONTROL_COUNT];
 static lv_obj_t *music_play_icon;
+static lv_obj_t *led_panel;
 
 
 /* =========================================================
@@ -190,6 +229,7 @@ static void show_standard_content(bool visible)
     set_hidden(footer_label, !visible);
     set_hidden(ha_panel, visible);
     set_hidden(music_panel, true);
+    set_hidden(led_panel, true);
 }
 
 
@@ -730,6 +770,102 @@ static lv_obj_t *create_music_control_button(
 
 
 /* =========================================================
+ * LED UI and interaction
+ * ========================================================= */
+
+static void create_led_row(
+    led_item_t *item,
+    int index
+)
+{
+    item->row = lv_obj_create(led_panel);
+    lv_obj_set_size(item->row, 146, 44);
+    lv_obj_set_pos(item->row, 0, 24 + index * 48);
+    lv_obj_set_scrollable(item->row, false);
+    lv_obj_set_style_radius(item->row, 9, 0);
+    lv_obj_set_style_border_width(item->row, 0, 0);
+    lv_obj_set_style_bg_color(item->row, lv_color_hex(LED_COLOR_SELECTED), 0);
+    lv_obj_set_style_bg_opa(item->row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(item->row, 0, 0);
+
+    item->icon_label = lv_label_create(item->row);
+    lv_label_set_text(item->icon_label, item->icon);
+    lv_obj_set_style_text_font(item->icon_label, &lv_font_montserrat_18, 0);
+    lv_obj_align(item->icon_label, LV_ALIGN_LEFT_MID, 8, 0);
+
+    item->name_label = lv_label_create(item->row);
+    lv_label_set_text(item->name_label, item->name);
+    lv_obj_set_style_text_font(item->name_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_pos(item->name_label, 36, 4);
+
+    item->subtitle_label = lv_label_create(item->row);
+    lv_label_set_text(item->subtitle_label, item->subtitle);
+    lv_obj_set_style_text_font(item->subtitle_label, &s1_led_font_12, 0);
+    lv_obj_set_pos(item->subtitle_label, 36, 24);
+
+    item->status_label = lv_label_create(item->row);
+    lv_obj_set_style_text_font(item->status_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(item->status_label, LV_ALIGN_RIGHT_MID, -9, 0);
+}
+
+
+static void update_led_rows(void)
+{
+    for(int index = 0; index < LED_ITEM_COUNT; index++) {
+        led_item_t *item = &led_items[index];
+        bool selected = index == led_selected;
+        bool active = index == led_active;
+        bool error = index == led_error;
+
+        lv_obj_set_style_bg_opa(
+            item->row,
+            selected ? LV_OPA_COVER : LV_OPA_TRANSP,
+            0
+        );
+        lv_obj_set_style_text_color(
+            item->icon_label,
+            lv_color_hex(selected ? LED_COLOR_BLUE : 0x657482),
+            0
+        );
+        lv_obj_set_style_text_color(
+            item->name_label,
+            lv_color_hex(selected ? 0xF7FBFD : 0xDCE4EA),
+            0
+        );
+        lv_obj_set_style_text_color(
+            item->subtitle_label,
+            lv_color_hex(selected ? 0x9EDDF8 : 0x667886),
+            0
+        );
+
+        lv_label_set_text(
+            item->status_label,
+            error ? "!" : (active ? LV_SYMBOL_OK : "")
+        );
+        lv_obj_set_style_text_color(
+            item->status_label,
+            lv_color_hex(error ? LED_COLOR_ERROR : LED_COLOR_BLUE),
+            0
+        );
+    }
+}
+
+
+static void activate_led_item(void)
+{
+    if(led_set_mode(led_items[led_selected].mode) == 0) {
+        led_active = led_selected;
+        led_error = -1;
+    }
+    else {
+        led_error = led_selected;
+    }
+
+    update_led_rows();
+}
+
+
+/* =========================================================
  * Page refresh
  * ========================================================= */
 
@@ -777,6 +913,27 @@ static void update_page(void)
         return;
     }
 
+    if(current_page == PAGE_LED) {
+        set_hidden(title_label, true);
+        set_hidden(center_panel, true);
+        set_hidden(footer_label, true);
+        set_hidden(ha_panel, true);
+        set_hidden(music_panel, true);
+        set_hidden(led_panel, false);
+        lv_obj_set_style_text_color(
+            subtitle_label,
+            lv_color_hex(LED_COLOR_BLUE),
+            0
+        );
+        lv_obj_set_style_text_font(
+            subtitle_label,
+            &lv_font_montserrat_14,
+            0
+        );
+        update_led_rows();
+        return;
+    }
+
     show_standard_content(true);
     lv_obj_set_style_text_color(subtitle_label, lv_color_hex(0x707785), 0);
     lv_obj_set_style_text_font(subtitle_label, &lv_font_montserrat_10, 0);
@@ -786,11 +943,6 @@ static void update_page(void)
         case PAGE_HOME:
             lv_label_set_text(center_text, "00:00\n\nWatch Face");
             lv_label_set_text(footer_label, "HOME");
-            break;
-
-        case PAGE_SETTINGS:
-            lv_label_set_text(center_text, "Settings\n\nSystem");
-            lv_label_set_text(footer_label, "< SETTINGS >");
             break;
 
         default:
@@ -893,6 +1045,31 @@ void s1_ui_key(uint32_t key)
 
         if(key == LV_KEY_ENTER) {
             set_music_mode(MUSIC_MODE_CONTROLS, true);
+            return;
+        }
+    }
+
+    if(current_page == PAGE_LED) {
+        if(key == LV_KEY_UP) {
+            led_selected =
+                (led_selected + LED_ITEM_COUNT - 1)
+                % LED_ITEM_COUNT;
+            led_error = -1;
+            update_led_rows();
+            return;
+        }
+
+        if(key == LV_KEY_DOWN) {
+            led_selected =
+                (led_selected + 1)
+                % LED_ITEM_COUNT;
+            led_error = -1;
+            update_led_rows();
+            return;
+        }
+
+        if(key == LV_KEY_ENTER) {
+            activate_led_item();
             return;
         }
     }
@@ -1174,6 +1351,24 @@ void s1_ui_init(void)
         0,
         0
     );
+
+    led_panel = lv_obj_create(root);
+    lv_obj_set_size(led_panel, 146, 268);
+    lv_obj_align(led_panel, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_set_scrollable(led_panel, false);
+    lv_obj_set_style_bg_opa(led_panel, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(led_panel, 0, 0);
+    lv_obj_set_style_pad_all(led_panel, 0, 0);
+
+    lv_obj_t *led_category = lv_label_create(led_panel);
+    lv_label_set_text(led_category, "LIGHT MODE");
+    lv_obj_set_style_text_color(led_category, lv_color_hex(0x607687), 0);
+    lv_obj_set_style_text_font(led_category, &lv_font_montserrat_10, 0);
+    lv_obj_set_pos(led_category, 6, 3);
+
+    for(int index = 0; index < LED_ITEM_COUNT; index++) {
+        create_led_row(&led_items[index], index);
+    }
 
     update_page();
 }
