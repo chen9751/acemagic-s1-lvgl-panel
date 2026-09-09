@@ -137,7 +137,7 @@ typedef struct {
 
 static ha_item_t ha_items[HA_ITEM_COUNT] = {
     {
-        .name = "关闭所有灯光",
+        .name = "关灯",
         .icon = HA_ICON_POWER,
         .state = "-- 盏亮"
     },
