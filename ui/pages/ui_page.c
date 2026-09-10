@@ -13,8 +13,9 @@ lv_obj_t *s1_ui_page_panel(lv_obj_t *parent)
 }
 const char *s1_ui_page_name(s1_page_id_t page)
 {
+    /* Light pages draw their room title inside the dedicated light layout. */
     static const char *names[] = {
-        "空调", "浴霸", "窗帘", "", "客厅灯", "书房灯", "卧室灯", "小卧室灯", "LED", "Music"
+        "空调", "浴霸", "窗帘", "", "", "", "", "", "LED", "Music"
     };
     return page >= 0 && page < S1_PAGE_COUNT ? names[page] : "";
 }
