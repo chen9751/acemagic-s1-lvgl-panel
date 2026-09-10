@@ -561,8 +561,8 @@ static lv_obj_t *create_music_info_label(
     lv_obj_t *label = lv_label_create(parent);
 
     lv_label_set_text(label, text);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_size(label, 104, LV_SIZE_CONTENT);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+    lv_obj_set_size(label, 104, lv_font_get_line_height(font));
     lv_obj_set_pos(label, 0, y);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
