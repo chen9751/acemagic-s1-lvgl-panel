@@ -45,6 +45,7 @@ let initialFullSeen = false;
 
 let statsMessages = 0;
 let statsMerged = 0;
+let statsSuperseded = 0;
 let statsInitialFull = 0;
 let statsPartialBatches = 0;
 let statsRects = 0;
@@ -95,6 +96,17 @@ function rectsTouchOrOverlap(a, b) {
         rectBottom(a) + 1 < b.y ||
         rectBottom(b) + 1 < a.y
     );
+}
+
+function rectContains(outer, inner) {
+    return outer.x <= inner.x &&
+        outer.y <= inner.y &&
+        rectRight(outer) >= rectRight(inner) &&
+        rectBottom(outer) >= rectBottom(inner);
+}
+
+function pendingSupersedes(rect) {
+    return dirtyRects.some(pending => rectContains(pending, rect));
 }
 
 function isFullLogicalRect(rect) {
@@ -381,7 +393,9 @@ async function sendPartial(rect) {
     const hwRegion = logicalRectToHardware(rect);
     const chunks = splitHardwareRegion(hwRegion);
 
-    for (const chunk of chunks) {
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+
         await lcd.refresh(
             handle,
             chunk.x,
@@ -391,9 +405,23 @@ async function sendPartial(rect) {
             { data: chunk.data }
         );
         statsChunks++;
+
+        /*
+         * Continuous LVGL animations (for example a long scrolling song
+         * title) can invalidate the same large area again while an older
+         * version is still being transferred. If the pending newest dirty
+         * rectangle fully covers this one, the unsent chunks are already
+         * stale. Stop this transfer and let the newest framebuffer replace it.
+         * This is safe because the next pending update covers every pixel of
+         * the abandoned logical rectangle.
+         */
+        if (i + 1 < chunks.length && pendingSupersedes(rect)) {
+            statsSuperseded++;
+            return { chunks: i + 1, superseded: true };
+        }
     }
 
-    return chunks.length;
+    return { chunks: chunks.length, superseded: false };
 }
 
 async function pumpDraw() {
@@ -435,9 +463,9 @@ async function pumpDraw() {
                 const rect = batch[i];
 
                 try {
-                    await sendPartial(rect);
+                    const result = await sendPartial(rect);
                     statsRects++;
-                    transferred = true;
+                    transferred = result.chunks > 0 || transferred;
                 } catch (err) {
                     /* Requeue this and all unprocessed regions using latest data. */
                     addDirtyRect(rect);
@@ -485,7 +513,7 @@ async function main() {
     handle = await node_hid.HIDAsync.open(device.path);
 
     console.error(
-        'S1 LCD opened; REDRAW initial sync only, normal UI uses cost-merged LCD_REFRESH'
+        'S1 LCD opened; REDRAW initial sync only, normal UI uses preemptive LCD_REFRESH'
     );
 
     await lcd.set_orientation(handle, true);
@@ -516,14 +544,16 @@ async function main() {
     setInterval(() => {
         console.error(
             `LCD stats: messages=${statsMessages} merged=${statsMerged} ` +
-            `initialFull=${statsInitialFull} batches=${statsPartialBatches} ` +
-            `rects=${statsRects} chunks=${statsChunks} errors=${statsErrors} ` +
+            `superseded=${statsSuperseded} initialFull=${statsInitialFull} ` +
+            `batches=${statsPartialBatches} rects=${statsRects} ` +
+            `chunks=${statsChunks} errors=${statsErrors} ` +
             `transfer=${statsLastTransferMs}ms max=${statsMaxTransferMs}ms ` +
             `pending=${dirtyRects.length}`
         );
 
         statsMessages = 0;
         statsMerged = 0;
+        statsSuperseded = 0;
         statsInitialFull = 0;
         statsPartialBatches = 0;
         statsRects = 0;
