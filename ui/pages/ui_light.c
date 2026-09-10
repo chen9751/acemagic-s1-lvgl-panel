@@ -21,10 +21,10 @@ typedef struct {
 } light_t;
 
 static light_t lights[] = {
-    {"light.yeelink_ceil40_9771_light",   "客厅灯",   "LIVING ROOM",  LIGHT_OFF, 50, 50},
-    {"light.yeelink_ceil40_d8b6_light",   "书房灯",   "STUDY",        LIGHT_OFF, 50, 50},
-    {"light.yeelink_ceiling17_b415_light", "卧室灯",   "BEDROOM",      LIGHT_OFF, 50, 50},
-    {"light.yeelink_ceiling17_40d7_light", "小卧室灯", "SMALL ROOM",   LIGHT_OFF, 50, 50}
+    {"light.yeelink_ceil40_9771_light",    "客厅灯",   "LIVING ROOM", LIGHT_OFF, 50, 50},
+    {"light.yeelink_ceil40_d8b6_light",    "书房灯",   "STUDY",       LIGHT_OFF, 50, 50},
+    {"light.yeelink_ceiling17_b415_light", "卧室灯",   "BEDROOM",     LIGHT_OFF, 50, 50},
+    {"light.yeelink_ceiling17_40d7_light", "小卧室灯", "SMALL ROOM",  LIGHT_OFF, 50, 50}
 };
 
 static int selected;
@@ -39,7 +39,6 @@ static lv_obj_t *off_label;
 static lv_obj_t *bar;
 static lv_obj_t *info_caption;
 static lv_obj_t *value_label;
-static lv_obj_t *mode_label;
 static lv_obj_t *hint_label;
 static lv_obj_t *error_label;
 
@@ -69,8 +68,20 @@ static void set_on_widgets_hidden(bool hidden)
     set_hidden(bar, hidden);
     set_hidden(info_caption, hidden);
     set_hidden(value_label, hidden);
-    set_hidden(mode_label, hidden);
     set_hidden(status_chip, hidden);
+}
+
+static void hide_global_page_counter(lv_obj_t *parent)
+{
+    /* s1_ui_init creates subtitle_label then page_label before page modules.
+     * Hide the legacy page counter once here; its hidden state persists on all pages.
+     */
+    if(lv_obj_get_child_count(parent) > 1) {
+        lv_obj_t *candidate = lv_obj_get_child(parent, 1);
+        if(lv_obj_check_type(candidate, &lv_label_class)) {
+            lv_obj_set_hidden(candidate, true);
+        }
+    }
 }
 
 static void render(void)
@@ -88,14 +99,13 @@ static void render(void)
 
     if(off) {
         lv_label_set_text(off_label, "OFF");
-        lv_label_set_text(hint_label, "OK  打开");
+        lv_label_set_text(hint_label, "OK  ON");
         return;
     }
 
     lv_label_set_text(status_label, "ON");
-    lv_label_set_text(info_caption, temperature ? "COLOR TEMP" : "BRIGHTNESS");
-    lv_label_set_text(mode_label, temperature ? "色温" : "亮度");
-    lv_label_set_text(hint_label, temperature ? "MENU  切换亮度" : "MENU  切换色温");
+    lv_label_set_text(info_caption, temperature ? "色温" : "亮度");
+    lv_label_set_text(hint_label, temperature ? "MENU  亮度" : "MENU  色温");
 
     char value[16];
     snprintf(value,
@@ -105,7 +115,7 @@ static void render(void)
     lv_label_set_text(value_label, value);
 
     if(temperature) {
-        /* The temperature page is a full cold-to-warm colour field. */
+        /* Full cold-to-warm field; current Kelvin value is shown beside it. */
         lv_bar_set_value(bar, 100, LV_ANIM_OFF);
         lv_obj_set_style_bg_color(bar, lv_color_hex(0xFFB94F), LV_PART_INDICATOR);
         lv_obj_set_style_bg_grad_color(bar, lv_color_hex(0xEEF7FF), LV_PART_INDICATOR);
@@ -120,6 +130,7 @@ static void render(void)
 
 void s1_ui_light_init(lv_obj_t *parent)
 {
+    hide_global_page_counter(parent);
     panel = s1_ui_page_panel(parent);
 
     room_label = lv_label_create(panel);
@@ -188,25 +199,20 @@ void s1_ui_light_init(lv_obj_t *parent)
     lv_obj_set_style_shadow_opa(bar, LV_OPA_20, 0);
 
     info_caption = lv_label_create(panel);
-    lv_label_set_text(info_caption, "BRIGHTNESS");
-    style_label(info_caption, &lv_font_montserrat_10, COLOR_WARM);
-    lv_obj_set_style_text_letter_space(info_caption, 1, 0);
-    lv_obj_set_pos(info_caption, 81, 91);
+    lv_label_set_text(info_caption, "亮度");
+    style_label(info_caption, &s1_ui_font_14, COLOR_WARM);
+    lv_obj_set_pos(info_caption, 81, 92);
 
     value_label = lv_label_create(panel);
     lv_label_set_text(value_label, "50%");
-    style_label(value_label, &lv_font_montserrat_22, COLOR_TEXT);
-    lv_obj_set_width(value_label, 64);
+    style_label(value_label, &lv_font_montserrat_20, COLOR_TEXT);
+    lv_obj_set_width(value_label, 65);
+    lv_label_set_long_mode(value_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(value_label, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_pos(value_label, 80, 112);
-
-    mode_label = lv_label_create(panel);
-    lv_label_set_text(mode_label, "亮度");
-    style_label(mode_label, &s1_ui_font_14, COLOR_MUTED);
-    lv_obj_set_pos(mode_label, 81, 145);
+    lv_obj_set_pos(value_label, 79, 116);
 
     hint_label = lv_label_create(panel);
-    lv_label_set_text(hint_label, "OK  打开");
+    lv_label_set_text(hint_label, "OK  ON");
     style_label(hint_label, &s1_ui_font_14, 0x777B81);
     lv_obj_set_width(hint_label, 146);
     lv_obj_set_style_text_align(hint_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -226,7 +232,17 @@ void s1_ui_light_init(lv_obj_t *parent)
 void s1_ui_light_show(s1_page_id_t page)
 {
     if(!s1_ui_router_is_light_page(page)) return;
+
     selected = page - S1_PAGE_LIGHT_LIVING;
+
+    /* A revisit always opens an active light at brightness control.
+     * Power state and remembered brightness/temperature values are preserved,
+     * and this UI-only mode reset sends no Home Assistant request.
+     */
+    if(lights[selected].mode != LIGHT_OFF) {
+        lights[selected].mode = LIGHT_BRIGHTNESS;
+    }
+
     lv_obj_set_hidden(panel, false);
     lv_obj_set_hidden(error_label, true);
     render();
