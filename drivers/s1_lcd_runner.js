@@ -10,10 +10,22 @@ const HEIGHT = 320;
 const PIXELS = WIDTH * HEIGHT;
 const FRAME_BYTES = PIXELS * 2;
 
+/*
+ * The S1 LCD redraw protocol sends a full framebuffer as 27 HID writes.
+ * Keep the hardware side conservative: at most ~15 FPS, and while one
+ * frame is being transmitted retain only the newest queued framebuffer.
+ */
+const MAX_FPS = 15;
+const MIN_FRAME_INTERVAL_MS = Math.ceil(1000 / MAX_FPS);
+const ERROR_BACKOFF_MS = 250;
+
 let handle = null;
 let rx = Buffer.alloc(0);
 let drawing = false;
 let pendingFrame = null;
+let drawTimer = null;
+let lastDrawStartedAt = 0;
+let retryNotBefore = 0;
 
 function frameToImage(frame) {
     const src = new Uint16Array(PIXELS);
@@ -27,8 +39,9 @@ function frameToImage(frame) {
      * LVGL source:
      *   170 x 320 portrait
      *
-     * Reorder into 320 x 170 scan order
-     * for this orientation test.
+     * Reorder into 320 x 170 scan order required by the S1 LCD.
+     * This mapping is already verified on real hardware; do not alter it
+     * as part of redraw scheduling changes.
      */
     for (let y = 0; y < HEIGHT; y++) {
         for (let x = 0; x < WIDTH; x++) {
@@ -46,31 +59,61 @@ function frameToImage(frame) {
     return { data: pixels };
 }
 
-async function drawFrame(frame) {
-    if (drawing) {
-        pendingFrame = Buffer.from(frame);
+function scheduleDraw() {
+    if (drawing || drawTimer || !pendingFrame || !handle) {
         return;
     }
 
+    const now = Date.now();
+    const nextAllowedAt = Math.max(
+        lastDrawStartedAt + MIN_FRAME_INTERVAL_MS,
+        retryNotBefore
+    );
+    const delay = Math.max(0, nextAllowedAt - now);
+
+    drawTimer = setTimeout(() => {
+        drawTimer = null;
+        void pumpDraw();
+    }, delay);
+}
+
+function queueFrame(frame) {
+    /*
+     * Latest-frame-wins queue:
+     * replace any frame that has not started transmitting yet.
+     */
+    pendingFrame = Buffer.from(frame);
+    scheduleDraw();
+}
+
+async function pumpDraw() {
+    if (drawing || !pendingFrame || !handle) {
+        return;
+    }
+
+    const frame = pendingFrame;
+    pendingFrame = null;
     drawing = true;
+    lastDrawStartedAt = Date.now();
 
     try {
-        let current = Buffer.from(frame);
-
-        while (current) {
-            pendingFrame = null;
-
-            await lcd.redraw(
-                handle,
-                frameToImage(current)
-            );
-
-            current = pendingFrame;
-        }
+        await lcd.redraw(
+            handle,
+            frameToImage(frame)
+        );
+        retryNotBefore = 0;
     } catch (err) {
         console.error('LCD redraw error:', err);
+
+        /*
+         * A failed HID transfer should not trigger a tight retry loop.
+         * New LVGL frames may continue replacing pendingFrame during this
+         * short backoff; once it expires only the newest frame is sent.
+         */
+        retryNotBefore = Date.now() + ERROR_BACKOFF_MS;
     } finally {
         drawing = false;
+        scheduleDraw();
     }
 }
 
@@ -95,7 +138,7 @@ async function main() {
         device.path
     );
 
-    console.error('S1 LCD opened');
+    console.error(`S1 LCD opened; redraw limit ${MAX_FPS} FPS`);
 
     await lcd.set_orientation(
         handle,
@@ -120,14 +163,14 @@ async function main() {
                 FRAME_BYTES
             );
 
-            drawFrame(frame);
+            queueFrame(frame);
         }
     });
 
     process.stdin.resume();
 
     setInterval(async () => {
-        if (!drawing && handle) {
+        if (!drawing && !drawTimer && handle) {
             try {
                 await lcd.heartbeat(handle);
             } catch (_) {
