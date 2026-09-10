@@ -10,11 +10,11 @@
 #include <time.h>
 #include <unistd.h>
 
-#define LED_DEVICE_DEFAULT "/dev/ttyUSB0"
+#define LED_DEVICE_STABLE  "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
+#define LED_DEVICE_FALLBACK "/dev/ttyUSB0"
 #define LED_BAUD_RATE 10000U
 #define LED_BYTE_DELAY_NS 5000000L
 #define LED_LEVEL_DEFAULT 3U
-#define LED_LEVEL_OFF 5U
 
 
 int led_build_command(
@@ -100,23 +100,36 @@ static int write_command(int fd, const uint8_t command[5])
 }
 
 
-int led_set_mode(led_mode_t mode)
+static int open_led_device(void)
 {
     const char *device = getenv("S1_LED_DEVICE");
-    uint8_t level = mode == LED_MODE_OFF
-        ? LED_LEVEL_OFF
-        : LED_LEVEL_DEFAULT;
-    uint8_t command[5];
 
-    if(device == NULL || device[0] == '\0') {
-        device = LED_DEVICE_DEFAULT;
+    if(device != NULL && device[0] != '\0') {
+        return open(device, O_RDWR | O_NOCTTY | O_CLOEXEC);
     }
 
-    if(led_build_command(mode, level, level, command) != 0) {
+    int fd = open(LED_DEVICE_STABLE, O_RDWR | O_NOCTTY | O_CLOEXEC);
+    if(fd >= 0) {
+        return fd;
+    }
+
+    return open(LED_DEVICE_FALLBACK, O_RDWR | O_NOCTTY | O_CLOEXEC);
+}
+
+
+int led_set_state(
+    led_mode_t mode,
+    uint8_t intensity,
+    uint8_t speed
+)
+{
+    uint8_t command[5];
+
+    if(led_build_command(mode, intensity, speed, command) != 0) {
         return -1;
     }
 
-    int fd = open(device, O_RDWR | O_NOCTTY | O_CLOEXEC);
+    int fd = open_led_device();
 
     if(fd < 0) {
         perror("LED: unable to open serial device");
@@ -137,4 +150,14 @@ int led_set_mode(led_mode_t mode)
 
     close(fd);
     return result;
+}
+
+
+int led_set_mode(led_mode_t mode)
+{
+    return led_set_state(
+        mode,
+        LED_LEVEL_DEFAULT,
+        LED_LEVEL_DEFAULT
+    );
 }
