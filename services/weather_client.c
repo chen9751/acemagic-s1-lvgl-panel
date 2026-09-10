@@ -26,14 +26,31 @@ static size_t write_cb(void *ptr, size_t size, size_t nmemb, void *userdata)
     return size * nmemb;
 }
 
-static int parse_number_after(const char *json, const char *key, int *value)
+static int parse_number_in_section(
+    const char *json,
+    const char *section,
+    const char *key,
+    int *value
+)
 {
-    const char *p = strstr(json, key);
+    if(json == NULL || section == NULL || key == NULL || value == NULL) return -1;
+
+    const char *p = strstr(json, section);
     if(p == NULL) return -1;
+
+    const char *section_end = strchr(p, '}');
+    if(section_end == NULL) return -1;
+
+    p = strstr(p, key);
+    if(p == NULL || p >= section_end) return -1;
+
     p = strchr(p, ':');
-    if(p == NULL) return -1;
+    if(p == NULL || p >= section_end) return -1;
     p++;
+
     while(*p == ' ' || *p == '[') p++;
+    if(p >= section_end) return -1;
+
     *value = (int)strtol(p, NULL, 10);
     return 0;
 }
@@ -46,6 +63,8 @@ void weather_client_init(void)
 bool weather_client_refresh(weather_state_t *state)
 {
     if(state == NULL) return false;
+
+    state->valid = false;
 
     const char *url = getenv("S1_WEATHER_URL");
     if(url == NULL || url[0] == '\0') url = WEATHER_URL_DEFAULT;
@@ -67,15 +86,30 @@ bool weather_client_refresh(weather_state_t *state)
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     curl_easy_cleanup(curl);
 
-    if(rc != CURLE_OK || status < 200 || status >= 300) return false;
+    if(rc != CURLE_OK || status < 200 || status >= 300) {
+        fprintf(stderr, "Weather refresh failed: curl=%d http=%ld\n", (int)rc, status);
+        return false;
+    }
 
     int temp = 0;
     int code = 0;
     int rain = 0;
 
-    if(parse_number_after(buffer.data, "\"temperature_2m\"", &temp) != 0) return false;
-    parse_number_after(buffer.data, "\"weather_code\"", &code);
-    parse_number_after(buffer.data, "\"precipitation_probability_max\"", &rain);
+    /* Open-Meteo repeats field names inside *_units objects. Parse only from
+     * the actual current and daily data objects so strings such as "°C" are
+     * never interpreted as numeric weather values. */
+    if(parse_number_in_section(buffer.data, "\"current\":", "\"temperature_2m\"", &temp) != 0) {
+        fprintf(stderr, "Weather parse failed: current.temperature_2m\n");
+        return false;
+    }
+    if(parse_number_in_section(buffer.data, "\"current\":", "\"weather_code\"", &code) != 0) {
+        fprintf(stderr, "Weather parse failed: current.weather_code\n");
+        return false;
+    }
+    if(parse_number_in_section(buffer.data, "\"daily\":", "\"precipitation_probability_max\"", &rain) != 0) {
+        fprintf(stderr, "Weather parse failed: daily.precipitation_probability_max\n");
+        return false;
+    }
 
     if(rain < 0) rain = 0;
     if(rain > 100) rain = 100;
