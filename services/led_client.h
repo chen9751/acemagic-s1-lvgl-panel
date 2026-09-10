@@ -19,6 +19,15 @@ int led_build_command(
     uint8_t speed,
     uint8_t command[5]
 );
+
+/* Apply a complete LED controller state. intensity/speed use the verified 1..5 range. */
+int led_set_state(
+    led_mode_t mode,
+    uint8_t intensity,
+    uint8_t speed
+);
+
+/* Convenience wrapper kept for callers that only select a mode. */
 int led_set_mode(led_mode_t mode);
 
 
