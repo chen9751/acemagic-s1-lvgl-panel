@@ -1,5 +1,5 @@
 #include "hal.h"
-#include "../../ui/s1_ui.h"
+#include "../../input/s1_input_dispatch.h"
 
 
 static void keyboard_event_cb(lv_event_t * e)
@@ -22,7 +22,7 @@ static void keyboard_event_cb(lv_event_t * e)
 
     uint32_t key = lv_indev_get_key(indev);
 
-    s1_ui_key(key);
+    s1_input_dispatch_key(key);
 }
 
 
