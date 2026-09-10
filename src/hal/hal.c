@@ -115,6 +115,8 @@ lv_display_t * sdl_hal_init(int32_t w, int32_t h)
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
+#include <pthread.h>
 
 #define S1_LCD_WIDTH       170
 #define S1_LCD_HEIGHT      320
@@ -122,6 +124,68 @@ lv_display_t * sdl_hal_init(int32_t w, int32_t h)
 
 static FILE * s1_lcd_pipe = NULL;
 static uint8_t * s1_lcd_buffer = NULL;
+static uint8_t * s1_lcd_pending_buffer = NULL;
+static uint8_t * s1_lcd_tx_buffer = NULL;
+
+static pthread_t s1_lcd_writer_thread;
+static pthread_mutex_t s1_lcd_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s1_lcd_cond = PTHREAD_COND_INITIALIZER;
+static int s1_lcd_frame_pending = 0;
+static int s1_lcd_writer_started = 0;
+
+static void * s1_lcd_writer_main(void * arg)
+{
+    (void)arg;
+
+    for(;;) {
+        pthread_mutex_lock(&s1_lcd_mutex);
+
+        while(!s1_lcd_frame_pending) {
+            pthread_cond_wait(
+                &s1_lcd_cond,
+                &s1_lcd_mutex
+            );
+        }
+
+        /*
+         * Copy the newest queued framebuffer into a private transmit
+         * buffer, then release the lock before touching the pipe.
+         * If LVGL produces more frames while fwrite() is blocked, its
+         * flush callback simply overwrites s1_lcd_pending_buffer.
+         */
+        memcpy(
+            s1_lcd_tx_buffer,
+            s1_lcd_pending_buffer,
+            S1_LCD_FRAME_BYTES
+        );
+        s1_lcd_frame_pending = 0;
+
+        pthread_mutex_unlock(&s1_lcd_mutex);
+
+        if(s1_lcd_pipe) {
+            size_t written = fwrite(
+                s1_lcd_tx_buffer,
+                1,
+                S1_LCD_FRAME_BYTES,
+                s1_lcd_pipe
+            );
+
+            if(written != S1_LCD_FRAME_BYTES) {
+                fprintf(
+                    stderr,
+                    "S1 LCD: short framebuffer write %zu/%d\n",
+                    written,
+                    S1_LCD_FRAME_BYTES
+                );
+                clearerr(s1_lcd_pipe);
+            }
+
+            fflush(s1_lcd_pipe);
+        }
+    }
+
+    return NULL;
+}
 
 static void s1_lcd_flush_cb(
     lv_display_t * disp,
@@ -130,26 +194,28 @@ static void s1_lcd_flush_cb(
 {
     (void)area;
 
-    if(s1_lcd_pipe) {
-        size_t written = fwrite(
+    if(s1_lcd_writer_started && s1_lcd_pending_buffer) {
+        pthread_mutex_lock(&s1_lcd_mutex);
+
+        /*
+         * Latest-frame-wins queue. There is intentionally only one
+         * pending framebuffer: intermediate UI frames are discarded
+         * whenever the LCD/USB path is slower than LVGL rendering.
+         */
+        memcpy(
+            s1_lcd_pending_buffer,
             px_map,
-            1,
-            S1_LCD_FRAME_BYTES,
-            s1_lcd_pipe
+            S1_LCD_FRAME_BYTES
         );
+        s1_lcd_frame_pending = 1;
 
-        if(written != S1_LCD_FRAME_BYTES) {
-            fprintf(
-                stderr,
-                "S1 LCD: short framebuffer write %zu/%d\n",
-                written,
-                S1_LCD_FRAME_BYTES
-            );
-        }
-
-        fflush(s1_lcd_pipe);
+        pthread_cond_signal(&s1_lcd_cond);
+        pthread_mutex_unlock(&s1_lcd_mutex);
     }
 
+    /*
+     * The LVGL main loop never waits for pipe/HID transmission.
+     */
     lv_display_flush_ready(disp);
 }
 
@@ -180,26 +246,55 @@ lv_display_t * s1_hal_init(int32_t w, int32_t h)
     }
 
     /*
-     * Full 170x320 RGB565 framebuffer.
+     * Three full-frame buffers:
+     *  - LVGL render buffer
+     *  - newest frame waiting for the writer thread
+     *  - writer thread's private pipe transmit buffer
      */
     s1_lcd_buffer = malloc(S1_LCD_FRAME_BYTES);
+    s1_lcd_pending_buffer = malloc(S1_LCD_FRAME_BYTES);
+    s1_lcd_tx_buffer = malloc(S1_LCD_FRAME_BYTES);
 
-    if(!s1_lcd_buffer) {
+    if(!s1_lcd_buffer ||
+       !s1_lcd_pending_buffer ||
+       !s1_lcd_tx_buffer) {
         fprintf(stderr, "S1 LCD: framebuffer allocation failed\n");
+        free(s1_lcd_buffer);
+        free(s1_lcd_pending_buffer);
+        free(s1_lcd_tx_buffer);
+        s1_lcd_buffer = NULL;
+        s1_lcd_pending_buffer = NULL;
+        s1_lcd_tx_buffer = NULL;
         pclose(s1_lcd_pipe);
         s1_lcd_pipe = NULL;
         return NULL;
     }
+
+    if(pthread_create(
+        &s1_lcd_writer_thread,
+        NULL,
+        s1_lcd_writer_main,
+        NULL
+    ) != 0) {
+        fprintf(stderr, "S1 LCD: unable to start writer thread\n");
+        free(s1_lcd_buffer);
+        free(s1_lcd_pending_buffer);
+        free(s1_lcd_tx_buffer);
+        s1_lcd_buffer = NULL;
+        s1_lcd_pending_buffer = NULL;
+        s1_lcd_tx_buffer = NULL;
+        pclose(s1_lcd_pipe);
+        s1_lcd_pipe = NULL;
+        return NULL;
+    }
+
+    s1_lcd_writer_started = 1;
 
     lv_display_t * disp =
         lv_display_create(w, h);
 
     if(!disp) {
         fprintf(stderr, "S1 LCD: lv_display_create failed\n");
-        free(s1_lcd_buffer);
-        s1_lcd_buffer = NULL;
-        pclose(s1_lcd_pipe);
-        s1_lcd_pipe = NULL;
         return NULL;
     }
 
@@ -227,7 +322,7 @@ lv_display_t * s1_hal_init(int32_t w, int32_t h)
     lv_display_set_default(disp);
 
     printf(
-        "S1 LCD HAL initialized: %dx%d RGB565\n",
+        "S1 LCD HAL initialized: %dx%d RGB565 async writer\n",
         S1_LCD_WIDTH,
         S1_LCD_HEIGHT
     );
