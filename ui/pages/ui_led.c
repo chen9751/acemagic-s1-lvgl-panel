@@ -4,12 +4,12 @@
 #include <stdio.h>
 
 #define LED_PAGE_BG          0x080A0F
+#define LED_PAGE_BG_2        0x0B1720
 #define LED_ROW_BG           0x18374A
 #define LED_BLUE             0x18B9D9
 #define LED_TEXT             0xE7EDF3
 #define LED_SUBTEXT          0x70808C
 #define LED_ERROR            0xEF7D72
-#define LED_VALUE_BG         0x121A25
 
 LV_FONT_DECLARE(s1_led_font_12);
 
@@ -72,30 +72,16 @@ static void refresh_rows(void)
         bool is_error = error_mode == i;
 
         set_row_selected(mode_rows[i].row, is_selected);
-        lv_obj_set_style_text_color(
-            mode_rows[i].icon_label,
-            lv_color_hex(is_selected ? LED_BLUE : 0x657482),
-            0
-        );
-        lv_obj_set_style_text_color(
-            mode_rows[i].name_label,
-            lv_color_hex(is_selected ? 0xF7FBFD : LED_TEXT),
-            0
-        );
-        lv_obj_set_style_text_color(
-            mode_rows[i].subtitle_label,
-            lv_color_hex(is_selected ? 0x9EDDF8 : LED_SUBTEXT),
-            0
-        );
-        lv_label_set_text(
-            mode_rows[i].status_label,
-            is_error ? "!" : (is_active ? LV_SYMBOL_OK : "")
-        );
-        lv_obj_set_style_text_color(
-            mode_rows[i].status_label,
-            lv_color_hex(is_error ? LED_ERROR : LED_BLUE),
-            0
-        );
+        lv_obj_set_style_text_color(mode_rows[i].icon_label,
+                                    lv_color_hex(is_selected ? LED_BLUE : 0x657482), 0);
+        lv_obj_set_style_text_color(mode_rows[i].name_label,
+                                    lv_color_hex(is_selected ? 0xF7FBFD : LED_TEXT), 0);
+        lv_obj_set_style_text_color(mode_rows[i].subtitle_label,
+                                    lv_color_hex(is_selected ? 0x9EDDF8 : LED_SUBTEXT), 0);
+        lv_label_set_text(mode_rows[i].status_label,
+                          is_error ? "!" : (is_active ? LV_SYMBOL_OK : ""));
+        lv_obj_set_style_text_color(mode_rows[i].status_label,
+                                    lv_color_hex(is_error ? LED_ERROR : LED_BLUE), 0);
     }
 
     set_row_selected(intensity_row, selected == LED_SELECT_INTENSITY);
@@ -116,9 +102,7 @@ static void refresh_rows(void)
 
 static int apply_mode_index(int index)
 {
-    if(index < 0 || index >= MODE_COUNT) {
-        return -1;
-    }
+    if(index < 0 || index >= MODE_COUNT) return -1;
 
     int rc = led_set_state(mode_rows[index].mode, intensity, speed);
     if(rc == 0) {
@@ -128,29 +112,21 @@ static int apply_mode_index(int index)
     else {
         error_mode = index;
     }
-
     refresh_rows();
     return rc;
 }
 
 static void apply_live_adjustment(void)
 {
-    if(active_mode < 0 || active_mode >= MODE_COUNT) {
-        return;
-    }
+    if(active_mode < 0 || active_mode >= MODE_COUNT) return;
 
     if(mode_rows[active_mode].mode == LED_MODE_OFF) {
         refresh_rows();
         return;
     }
 
-    if(led_set_state(mode_rows[active_mode].mode, intensity, speed) != 0) {
-        error_mode = active_mode;
-    }
-    else {
-        error_mode = -1;
-    }
-
+    error_mode = led_set_state(mode_rows[active_mode].mode, intensity, speed) == 0
+        ? -1 : active_mode;
     refresh_rows();
 }
 
@@ -167,7 +143,6 @@ static lv_obj_t *create_mode_row(int index)
     lv_obj_set_style_bg_color(row, lv_color_hex(LED_ROW_BG), 0);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(row, 0, 0);
-
     item->row = row;
 
     item->icon_label = lv_label_create(row);
@@ -188,19 +163,13 @@ static lv_obj_t *create_mode_row(int index)
     item->status_label = lv_label_create(row);
     lv_obj_set_style_text_font(item->status_label, &lv_font_montserrat_12, 0);
     lv_obj_align(item->status_label, LV_ALIGN_RIGHT_MID, -8, 0);
-
     return row;
 }
 
-static lv_obj_t *create_setting_row(
-    int32_t y,
-    const char *name,
-    const char *subtitle,
-    lv_obj_t **value_label
-)
+static lv_obj_t *create_setting_row(int32_t y, const char *name, lv_obj_t **value_label)
 {
     lv_obj_t *row = lv_obj_create(content);
-    lv_obj_set_size(row, 146, 38);
+    lv_obj_set_size(row, 146, 33);
     lv_obj_set_pos(row, 0, y);
     lv_obj_set_scrollable(row, false);
     lv_obj_set_style_radius(row, 8, 0);
@@ -213,27 +182,18 @@ static lv_obj_t *create_setting_row(
     lv_label_set_text(name_label, name);
     lv_obj_set_style_text_font(name_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(name_label, lv_color_hex(LED_TEXT), 0);
-    lv_obj_set_pos(name_label, 8, 3);
-
-    lv_obj_t *sub_label = lv_label_create(row);
-    lv_label_set_text(sub_label, subtitle);
-    lv_obj_set_style_text_font(sub_label, &s1_led_font_12, 0);
-    lv_obj_set_style_text_color(sub_label, lv_color_hex(LED_SUBTEXT), 0);
-    lv_obj_set_pos(sub_label, 8, 20);
+    lv_obj_align(name_label, LV_ALIGN_LEFT_MID, 8, 0);
 
     *value_label = lv_label_create(row);
     lv_obj_set_style_text_font(*value_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(*value_label, lv_color_hex(LED_BLUE), 0);
     lv_obj_align(*value_label, LV_ALIGN_RIGHT_MID, -8, 0);
-
     return row;
 }
 
 void s1_ui_led_init(void)
 {
-    if(overlay != NULL) {
-        return;
-    }
+    if(overlay != NULL) return;
 
     overlay = lv_obj_create(lv_screen_active());
     lv_obj_set_size(overlay, 170, 292);
@@ -242,6 +202,8 @@ void s1_ui_led_init(void)
     lv_obj_set_style_radius(overlay, 0, 0);
     lv_obj_set_style_border_width(overlay, 0, 0);
     lv_obj_set_style_bg_color(overlay, lv_color_hex(LED_PAGE_BG), 0);
+    lv_obj_set_style_bg_grad_color(overlay, lv_color_hex(LED_PAGE_BG_2), 0);
+    lv_obj_set_style_bg_grad_dir(overlay, LV_GRAD_DIR_VER, 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(overlay, 12, 0);
 
@@ -253,16 +215,14 @@ void s1_ui_led_init(void)
     lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(content, 0, 0);
 
-    for(int i = 0; i < MODE_COUNT; i++) {
-        create_mode_row(i);
-    }
+    for(int i = 0; i < MODE_COUNT; i++) create_mode_row(i);
 
-    intensity_row = create_setting_row(164, "Intensity", "亮度", &intensity_value);
-    speed_row = create_setting_row(205, "Speed", "速度", &speed_value);
+    intensity_row = create_setting_row(166, "Intensity", &intensity_value);
+    speed_row = create_setting_row(203, "Speed", &speed_value);
 
     hint_label = lv_label_create(content);
     lv_obj_set_width(hint_label, 146);
-    lv_obj_set_pos(hint_label, 0, 250);
+    lv_obj_set_pos(hint_label, 0, 247);
     lv_obj_set_style_text_align(hint_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(hint_label, &lv_font_montserrat_10, 0);
     lv_obj_set_style_text_color(hint_label, lv_color_hex(0x5F6672), 0);
@@ -273,10 +233,7 @@ void s1_ui_led_init(void)
 
 void s1_ui_led_show(void)
 {
-    if(overlay == NULL) {
-        s1_ui_led_init();
-    }
-
+    if(overlay == NULL) s1_ui_led_init();
     lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(overlay);
     refresh_rows();
@@ -284,9 +241,7 @@ void s1_ui_led_show(void)
 
 void s1_ui_led_hide(void)
 {
-    if(overlay != NULL) {
-        lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
-    }
+    if(overlay != NULL) lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
 void s1_ui_led_key(uint32_t key)
@@ -297,27 +252,19 @@ void s1_ui_led_key(uint32_t key)
         refresh_rows();
         return;
     }
-
     if(key == LV_KEY_DOWN) {
         selected = (selected + 1) % LED_SELECT_COUNT;
         error_mode = -1;
         refresh_rows();
         return;
     }
-
     if(key == LV_KEY_ENTER) {
-        if(selected < MODE_COUNT) {
-            apply_mode_index(selected);
-        }
+        if(selected < MODE_COUNT) apply_mode_index(selected);
         return;
     }
-
-    if(key != LV_KEY_LEFT && key != LV_KEY_RIGHT) {
-        return;
-    }
+    if(key != LV_KEY_LEFT && key != LV_KEY_RIGHT) return;
 
     int delta = key == LV_KEY_RIGHT ? 1 : -1;
-
     if(selected == LED_SELECT_INTENSITY) {
         int next = (int)intensity + delta;
         if(next < 1) next = 1;
@@ -328,7 +275,6 @@ void s1_ui_led_key(uint32_t key)
         }
         return;
     }
-
     if(selected == LED_SELECT_SPEED) {
         int next = (int)speed + delta;
         if(next < 1) next = 1;
