@@ -256,6 +256,17 @@ async function pumpDraw() {
         retryNotBefore = 0;
     } catch (err) {
         statsErrors++;
+
+        /*
+         * A failed 27-packet full redraw can leave the physical panel in an
+         * unknown intermediate state. Forget the shadow so the next frame
+         * performs a complete resynchronization. Partial writes are different:
+         * each successful tile was committed individually and can be trusted.
+         */
+        if (mode === 'full') {
+            displayedPixels = null;
+        }
+
         console.error(
             `LCD ${mode} refresh error${changedTiles.length ? ` (${changedTiles.length} tiles)` : ''}:`,
             err
