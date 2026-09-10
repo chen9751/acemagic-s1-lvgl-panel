@@ -16,10 +16,31 @@ let drawing = false;
 let pendingFrame = null;
 
 function frameToImage(frame) {
+    const src = new Uint16Array(PIXELS);
     const pixels = new Uint16Array(PIXELS);
 
     for (let i = 0; i < PIXELS; i++) {
-        pixels[i] = frame.readUInt16LE(i * 2);
+        src[i] = frame.readUInt16LE(i * 2);
+    }
+
+    /*
+     * LVGL source:
+     *   170 x 320 portrait
+     *
+     * Reorder into 320 x 170 scan order
+     * for this orientation test.
+     */
+    for (let y = 0; y < HEIGHT; y++) {
+        for (let x = 0; x < WIDTH; x++) {
+            const srcIndex = y * WIDTH + x;
+
+            const dstX = y;
+            const dstY = WIDTH - 1 - x;
+
+            const dstIndex = dstY * HEIGHT + dstX;
+
+            pixels[dstIndex] = src[srcIndex];
+        }
     }
 
     return { data: pixels };
@@ -38,7 +59,12 @@ async function drawFrame(frame) {
 
         while (current) {
             pendingFrame = null;
-            await lcd.redraw(handle, frameToImage(current));
+
+            await lcd.redraw(
+                handle,
+                frameToImage(current)
+            );
+
             current = pendingFrame;
         }
     } catch (err) {
@@ -56,25 +82,44 @@ async function main() {
     );
 
     if (!device) {
-        throw new Error('S1 LCD 04d9:fd01 interface 1 not found');
+        throw new Error(
+            'S1 LCD 04d9:fd01 interface 1 not found'
+        );
     }
 
     console.error(
         `S1 LCD found: ${device.path}, interface ${device.interface}`
     );
 
-    handle = await node_hid.HIDAsync.open(device.path);
+    handle = await node_hid.HIDAsync.open(
+        device.path
+    );
 
     console.error('S1 LCD opened');
 
-    await lcd.set_orientation(handle, true);
+    await lcd.set_orientation(
+        handle,
+        true
+    );
 
     process.stdin.on('data', chunk => {
-        rx = Buffer.concat([rx, chunk]);
+        rx = Buffer.concat([
+            rx,
+            chunk
+        ]);
 
         while (rx.length >= FRAME_BYTES) {
-            const frame = Buffer.from(rx.subarray(0, FRAME_BYTES));
-            rx = rx.subarray(FRAME_BYTES);
+            const frame = Buffer.from(
+                rx.subarray(
+                    0,
+                    FRAME_BYTES
+                )
+            );
+
+            rx = rx.subarray(
+                FRAME_BYTES
+            );
+
             drawFrame(frame);
         }
     });
