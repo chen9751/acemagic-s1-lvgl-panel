@@ -11,13 +11,22 @@ const PIXELS = WIDTH * HEIGHT;
 const FRAME_BYTES = PIXELS * 2;
 
 /*
- * The S1 LCD redraw protocol sends a full framebuffer as 27 HID writes.
- * Keep the hardware side conservative and never transmit frames back-to-back.
+ * The verified S1 scan order is 320 x 170 after rotating the LVGL
+ * 170 x 320 portrait framebuffer. Keep this mapping unchanged.
  */
-const MAX_FPS = 15;
-const MIN_FRAME_INTERVAL_MS = Math.ceil(1000 / MAX_FPS);
-const POST_REDRAW_COOLDOWN_MS = 20;
+const HW_WIDTH = HEIGHT;
+const HW_HEIGHT = WIDTH;
+
+/*
+ * LCD_REFRESH has one 4096-byte pixel payload, i.e. at most 2048
+ * RGB565 pixels per HID write. 64 x 32 exactly fills that payload.
+ */
+const TILE_WIDTH = 64;
+const TILE_HEIGHT = 32;
+const MAX_PARTIAL_TILES = 18;
+
 const ERROR_BACKOFF_MS = 250;
+const HEARTBEAT_INTERVAL_MS = 5000;
 const STATS_INTERVAL_MS = 5000;
 
 let handle = null;
@@ -25,20 +34,25 @@ let rx = Buffer.alloc(0);
 let drawing = false;
 let pendingFrame = null;
 let drawTimer = null;
-let lastDrawStartedAt = 0;
-let lastDrawFinishedAt = 0;
 let retryNotBefore = 0;
-let lastSuccessfulFrame = null;
+
+/*
+ * Shadow of what has actually reached the LCD successfully, in hardware
+ * 320 x 170 scan order. Partial writes update only their successful tile.
+ */
+let displayedPixels = null;
 
 let statsReceived = 0;
-let statsSent = 0;
 let statsDuplicate = 0;
 let statsReplaced = 0;
+let statsFull = 0;
+let statsPartialFrames = 0;
+let statsPartialTiles = 0;
 let statsErrors = 0;
-let statsLastDrawMs = 0;
-let statsMaxDrawMs = 0;
+let statsLastTransferMs = 0;
+let statsMaxTransferMs = 0;
 
-function frameToImage(frame) {
+function frameToHardwarePixels(frame) {
     const src = new Uint16Array(PIXELS);
     const pixels = new Uint16Array(PIXELS);
 
@@ -50,20 +64,95 @@ function frameToImage(frame) {
      * LVGL source:
      *   170 x 320 portrait
      *
-     * Reorder into 320 x 170 scan order required by the S1 LCD.
-     * This mapping is already verified on real hardware; do not alter it.
+     * S1 hardware scan order:
+     *   320 x 170
+     *
+     * This mapping is verified on real hardware. Do not alter it.
      */
     for (let y = 0; y < HEIGHT; y++) {
         for (let x = 0; x < WIDTH; x++) {
             const srcIndex = y * WIDTH + x;
             const dstX = y;
             const dstY = WIDTH - 1 - x;
-            const dstIndex = dstY * HEIGHT + dstX;
+            const dstIndex = dstY * HW_WIDTH + dstX;
             pixels[dstIndex] = src[srcIndex];
         }
     }
 
-    return { data: pixels };
+    return pixels;
+}
+
+function hardwarePixelsEqual(a, b) {
+    if (!a || !b || a.length !== b.length) {
+        return false;
+    }
+
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function tileChanged(current, displayed, tile) {
+    for (let y = 0; y < tile.height; y++) {
+        const rowStart = (tile.y + y) * HW_WIDTH + tile.x;
+
+        for (let x = 0; x < tile.width; x++) {
+            const index = rowStart + x;
+            if (current[index] !== displayed[index]) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function findChangedTiles(current, displayed) {
+    const changed = [];
+
+    for (let y = 0; y < HW_HEIGHT; y += TILE_HEIGHT) {
+        const height = Math.min(TILE_HEIGHT, HW_HEIGHT - y);
+
+        for (let x = 0; x < HW_WIDTH; x += TILE_WIDTH) {
+            const width = Math.min(TILE_WIDTH, HW_WIDTH - x);
+            const tile = { x, y, width, height };
+
+            if (tileChanged(current, displayed, tile)) {
+                changed.push(tile);
+            }
+        }
+    }
+
+    return changed;
+}
+
+function tileImage(pixels, tile) {
+    const data = new Uint16Array(tile.width * tile.height);
+    let dst = 0;
+
+    for (let y = 0; y < tile.height; y++) {
+        const srcStart = (tile.y + y) * HW_WIDTH + tile.x;
+
+        for (let x = 0; x < tile.width; x++) {
+            data[dst++] = pixels[srcStart + x];
+        }
+    }
+
+    return { data };
+}
+
+function copyTileToDisplayed(current, tile) {
+    for (let y = 0; y < tile.height; y++) {
+        const start = (tile.y + y) * HW_WIDTH + tile.x;
+        displayedPixels.set(
+            current.subarray(start, start + tile.width),
+            start
+        );
+    }
 }
 
 function scheduleDraw() {
@@ -71,13 +160,7 @@ function scheduleDraw() {
         return;
     }
 
-    const now = Date.now();
-    const nextAllowedAt = Math.max(
-        lastDrawStartedAt + MIN_FRAME_INTERVAL_MS,
-        lastDrawFinishedAt + POST_REDRAW_COOLDOWN_MS,
-        retryNotBefore
-    );
-    const delay = Math.max(0, nextAllowedAt - now);
+    const delay = Math.max(0, retryNotBefore - Date.now());
 
     drawTimer = setTimeout(() => {
         drawTimer = null;
@@ -88,13 +171,11 @@ function scheduleDraw() {
 function queueFrame(frame) {
     statsReceived++;
 
-    /* Do not resend a framebuffer already displayed successfully. */
-    if (lastSuccessfulFrame && frame.equals(lastSuccessfulFrame)) {
-        statsDuplicate++;
-        return;
-    }
-
-    /* If the exact same framebuffer is already waiting, keep one copy only. */
+    /*
+     * Avoid decoding/reordering the very common identical LVGL frames.
+     * The currently displayed hardware shadow remains the authority for
+     * deciding whether an update was really delivered.
+     */
     if (pendingFrame && frame.equals(pendingFrame)) {
         statsDuplicate++;
         return;
@@ -104,9 +185,37 @@ function queueFrame(frame) {
         statsReplaced++;
     }
 
-    /* Latest-frame-wins queue. */
     pendingFrame = Buffer.from(frame);
     scheduleDraw();
+}
+
+async function sendFull(currentPixels) {
+    await lcd.redraw(handle, { data: currentPixels });
+    displayedPixels = new Uint16Array(currentPixels);
+    statsFull++;
+}
+
+async function sendPartial(currentPixels, changedTiles) {
+    for (const tile of changedTiles) {
+        await lcd.refresh(
+            handle,
+            tile.x,
+            tile.y,
+            tile.width,
+            tile.height,
+            tileImage(currentPixels, tile)
+        );
+
+        /*
+         * Commit the shadow tile only after that exact HID write succeeds.
+         * If a later tile fails, the next frame automatically retries only
+         * the parts which are still different from the real LCD state.
+         */
+        copyTileToDisplayed(currentPixels, tile);
+        statsPartialTiles++;
+    }
+
+    statsPartialFrames++;
 }
 
 async function pumpDraw() {
@@ -117,23 +226,47 @@ async function pumpDraw() {
     const frame = pendingFrame;
     pendingFrame = null;
     drawing = true;
-    lastDrawStartedAt = Date.now();
+
+    const startedAt = Date.now();
+    let mode = 'none';
+    let changedTiles = [];
 
     try {
-        await lcd.redraw(handle, frameToImage(frame));
-        lastSuccessfulFrame = frame;
+        const currentPixels = frameToHardwarePixels(frame);
+
+        if (!displayedPixels) {
+            mode = 'full';
+            await sendFull(currentPixels);
+        } else if (hardwarePixelsEqual(currentPixels, displayedPixels)) {
+            statsDuplicate++;
+        } else {
+            changedTiles = findChangedTiles(currentPixels, displayedPixels);
+
+            if (changedTiles.length === 0) {
+                statsDuplicate++;
+            } else if (changedTiles.length <= MAX_PARTIAL_TILES) {
+                mode = 'partial';
+                await sendPartial(currentPixels, changedTiles);
+            } else {
+                mode = 'full';
+                await sendFull(currentPixels);
+            }
+        }
+
         retryNotBefore = 0;
-        statsSent++;
     } catch (err) {
         statsErrors++;
-        console.error('LCD redraw error:', err);
+        console.error(
+            `LCD ${mode} refresh error${changedTiles.length ? ` (${changedTiles.length} tiles)` : ''}:`,
+            err
+        );
         retryNotBefore = Date.now() + ERROR_BACKOFF_MS;
     } finally {
-        lastDrawFinishedAt = Date.now();
-        statsLastDrawMs = lastDrawFinishedAt - lastDrawStartedAt;
-        if (statsLastDrawMs > statsMaxDrawMs) {
-            statsMaxDrawMs = statsLastDrawMs;
+        statsLastTransferMs = Date.now() - startedAt;
+        if (statsLastTransferMs > statsMaxTransferMs) {
+            statsMaxTransferMs = statsLastTransferMs;
         }
+
         drawing = false;
         scheduleDraw();
     }
@@ -155,7 +288,8 @@ async function main() {
     handle = await node_hid.HIDAsync.open(device.path);
 
     console.error(
-        `S1 LCD opened; max ${MAX_FPS} FPS, ${POST_REDRAW_COOLDOWN_MS}ms post-redraw cooldown`
+        `S1 LCD opened; partial refresh ${TILE_WIDTH}x${TILE_HEIGHT}, ` +
+        `full fallback above ${MAX_PARTIAL_TILES} changed tiles`
     );
 
     await lcd.set_orientation(handle, true);
@@ -173,26 +307,30 @@ async function main() {
     process.stdin.resume();
 
     setInterval(async () => {
-        if (!drawing && !drawTimer && handle) {
+        if (!drawing && !drawTimer && !pendingFrame && handle) {
             try {
                 await lcd.heartbeat(handle);
             } catch (_) {
+                /* Heartbeat failures are non-fatal and intentionally quiet. */
             }
         }
-    }, 5000);
+    }, HEARTBEAT_INTERVAL_MS);
 
     setInterval(() => {
         console.error(
-            `LCD stats: rx=${statsReceived} sent=${statsSent} duplicate=${statsDuplicate} ` +
-            `replaced=${statsReplaced} errors=${statsErrors} redraw=${statsLastDrawMs}ms max=${statsMaxDrawMs}ms`
+            `LCD stats: rx=${statsReceived} duplicate=${statsDuplicate} replaced=${statsReplaced} ` +
+            `full=${statsFull} partial=${statsPartialFrames} tiles=${statsPartialTiles} ` +
+            `errors=${statsErrors} transfer=${statsLastTransferMs}ms max=${statsMaxTransferMs}ms`
         );
 
         statsReceived = 0;
-        statsSent = 0;
         statsDuplicate = 0;
         statsReplaced = 0;
+        statsFull = 0;
+        statsPartialFrames = 0;
+        statsPartialTiles = 0;
         statsErrors = 0;
-        statsMaxDrawMs = statsLastDrawMs;
+        statsMaxTransferMs = statsLastTransferMs;
     }, STATS_INTERVAL_MS);
 }
 
