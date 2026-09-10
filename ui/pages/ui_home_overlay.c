@@ -5,14 +5,13 @@
 #include <stdio.h>
 #include <time.h>
 
-#define HOME_BG_TOP       0x080A0F
-#define HOME_BG_BOTTOM    0x0B1822
+#define HOME_BG_TOP       0x070A10
+#define HOME_BG_BOTTOM    0x102A38
 #define HOME_HOUR_COLOR   0xA9E9F8
 #define HOME_MIN_COLOR    0x18B9D9
 #define HOME_TEXT_MUTED   0x71818D
 #define HOME_TEXT_MAIN    0xDCE7ED
 
-LV_FONT_DECLARE(s1_home_time_font_108);
 LV_FONT_DECLARE(s1_home_info_font_14);
 
 static lv_obj_t *overlay;
@@ -28,22 +27,9 @@ static const char *weekday_names[] = {
     "星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"
 };
 
-static const char *weather_symbol(int code)
+static void update_clock_text(void)
 {
-    if(code >= 51 && code <= 99) return LV_SYMBOL_TINT;
-    if(code >= 1 && code <= 3) return LV_SYMBOL_EYE_OPEN;
-    return LV_SYMBOL_OK;
-}
-
-static void refresh_home_overlay(lv_timer_t *timer)
-{
-    (void)timer;
     if(overlay == NULL) return;
-
-    bool is_home = s1_ui_router_current() == S1_PAGE_HOME;
-    if(is_home) lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
-    if(!is_home) return;
 
     time_t now = time(NULL);
     struct tm *local = localtime(&now);
@@ -68,8 +54,26 @@ static void refresh_home_overlay(lv_timer_t *timer)
     lv_label_set_text(date_label, date);
 }
 
+static void refresh_home_overlay(lv_timer_t *timer)
+{
+    (void)timer;
+    if(overlay == NULL) return;
+
+    /* The dispatcher now changes visibility synchronously. This is only a
+     * lightweight safety sync plus clock refresh, so page changes no longer
+     * wait half a second for the old Home page to disappear/reappear. */
+    if(s1_ui_router_current() == S1_PAGE_HOME) {
+        lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+        update_clock_text();
+    }
+    else {
+        lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 void s1_ui_home_overlay_set_weather(int temperature_c, int rain_probability_percent, int weather_code)
 {
+    (void)weather_code;
     if(overlay == NULL) return;
 
     if(rain_probability_percent < 0) rain_probability_percent = 0;
@@ -80,9 +84,24 @@ void s1_ui_home_overlay_set_weather(int temperature_c, int rain_probability_perc
     snprintf(temperature, sizeof(temperature), "%d°", temperature_c);
     snprintf(rain, sizeof(rain), "降雨 %d%%", rain_probability_percent);
 
-    lv_label_set_text(weather_icon_label, weather_symbol(weather_code));
+    /* A drop is used as the neutral weather glyph. The previous code mapped
+     * clear weather to LV_SYMBOL_OK, which looked like a status check mark. */
+    lv_label_set_text(weather_icon_label, LV_SYMBOL_TINT);
     lv_label_set_text(temperature_label, temperature);
     lv_label_set_text(rain_label, rain);
+}
+
+void s1_ui_home_overlay_show(void)
+{
+    if(overlay == NULL) s1_ui_home_overlay_init();
+    lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(overlay);
+    update_clock_text();
+}
+
+void s1_ui_home_overlay_hide(void)
+{
+    if(overlay != NULL) lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
 void s1_ui_home_overlay_init(void)
@@ -93,12 +112,15 @@ void s1_ui_home_overlay_init(void)
     lv_obj_set_size(overlay, 170, 320);
     lv_obj_set_pos(overlay, 0, 0);
     lv_obj_set_scrollable(overlay, false);
+    lv_obj_set_overflow_visible(overlay, true);
     lv_obj_set_style_radius(overlay, 0, 0);
     lv_obj_set_style_border_width(overlay, 0, 0);
     lv_obj_set_style_pad_all(overlay, 0, 0);
     lv_obj_set_style_bg_color(overlay, lv_color_hex(HOME_BG_TOP), 0);
     lv_obj_set_style_bg_grad_color(overlay, lv_color_hex(HOME_BG_BOTTOM), 0);
     lv_obj_set_style_bg_grad_dir(overlay, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_main_stop(overlay, 0, 0);
+    lv_obj_set_style_bg_grad_stop(overlay, 255, 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
 
     small_time_label = lv_label_create(overlay);
@@ -125,32 +147,39 @@ void s1_ui_home_overlay_init(void)
     lv_obj_set_style_text_color(rain_label, lv_color_hex(HOME_MIN_COLOR), 0);
     lv_obj_set_pos(rain_label, 14, 55);
 
+    /* Montserrat is more regular than the previous Fredoka clock face while
+     * keeping rounded corners. Scaling the 48 px glyphs keeps the two digits
+     * large enough for the 170 px S1 panel without the bubbly Fredoka shape. */
     hour_label = lv_label_create(overlay);
     lv_label_set_text(hour_label, "12");
-    lv_obj_set_size(hour_label, 158, 108);
-    lv_obj_set_pos(hour_label, 6, 72);
+    lv_obj_set_size(hour_label, 74, 52);
+    lv_obj_set_pos(hour_label, 48, 101);
     lv_obj_set_style_text_align(hour_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(hour_label, &s1_home_time_font_108, 0);
-    lv_obj_set_style_text_letter_space(hour_label, -5, 0);
+    lv_obj_set_style_text_font(hour_label, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_letter_space(hour_label, -2, 0);
     lv_obj_set_style_text_color(hour_label, lv_color_hex(HOME_HOUR_COLOR), 0);
+    lv_obj_set_style_transform_scale_x(hour_label, 470, 0);
+    lv_obj_set_style_transform_scale_y(hour_label, 470, 0);
 
     minute_label = lv_label_create(overlay);
     lv_label_set_text(minute_label, "00");
-    lv_obj_set_size(minute_label, 158, 108);
-    lv_obj_set_pos(minute_label, 6, 166);
+    lv_obj_set_size(minute_label, 74, 52);
+    lv_obj_set_pos(minute_label, 48, 204);
     lv_obj_set_style_text_align(minute_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(minute_label, &s1_home_time_font_108, 0);
-    lv_obj_set_style_text_letter_space(minute_label, -5, 0);
+    lv_obj_set_style_text_font(minute_label, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_letter_space(minute_label, -2, 0);
     lv_obj_set_style_text_color(minute_label, lv_color_hex(HOME_MIN_COLOR), 0);
+    lv_obj_set_style_transform_scale_x(minute_label, 470, 0);
+    lv_obj_set_style_transform_scale_y(minute_label, 470, 0);
 
     date_label = lv_label_create(overlay);
     lv_label_set_text(date_label, "星期--  --月--日");
     lv_obj_set_width(date_label, 146);
-    lv_obj_set_pos(date_label, 12, 286);
+    lv_obj_set_pos(date_label, 12, 291);
     lv_obj_set_style_text_align(date_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(date_label, &s1_home_info_font_14, 0);
     lv_obj_set_style_text_color(date_label, lv_color_hex(HOME_TEXT_MUTED), 0);
 
-    lv_timer_create(refresh_home_overlay, 500, NULL);
-    refresh_home_overlay(NULL);
+    lv_timer_create(refresh_home_overlay, 50, NULL);
+    s1_ui_home_overlay_show();
 }
