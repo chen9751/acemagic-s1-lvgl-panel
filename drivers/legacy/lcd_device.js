@@ -163,7 +163,7 @@ function refresh(handle, x, y, width, height, image) {
         _header.setUint8(7, height);
 
         {
-            const _data = new DataView(buffer.buffer, REPORT_SIZE + HEADER_SIZE);
+            const _data = new DataView(_buffer.buffer, REPORT_SIZE + HEADER_SIZE);
             const _length = width * height;
             var _offset = 0;
 
