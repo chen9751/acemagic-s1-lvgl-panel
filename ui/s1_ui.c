@@ -70,7 +70,8 @@ typedef enum {
 } music_control_t;
 
 
-static music_mode_t music_mode = MUSIC_MODE_PAGE;
+/* Music now opens directly in the frameless control layout. */
+static music_mode_t music_mode = MUSIC_MODE_CONTROLS;
 static music_control_t music_selected = MUSIC_CONTROL_PLAY;
 static bool music_playing = true;
 static lv_timer_t *music_flash_timer;
@@ -721,7 +722,7 @@ static void update_page(void)
     } else if(page == S1_PAGE_MUSIC) {
         set_hidden(music_panel, false);
         lv_obj_set_style_text_font(subtitle_label, &lv_font_montserrat_14, 0);
-        set_music_mode(MUSIC_MODE_PAGE, false);
+        set_music_mode(MUSIC_MODE_CONTROLS, false);
     } else if(page == S1_PAGE_LED) {
         set_hidden(led_panel, false);
         lv_obj_set_style_text_font(subtitle_label, &lv_font_montserrat_14, 0);
@@ -738,11 +739,7 @@ static void update_page(void)
 void s1_ui_key(uint32_t key)
 {
     s1_page_id_t current_page = s1_ui_router_current();
-    if(key == LV_KEY_ESC && current_page == S1_PAGE_MUSIC &&
-       music_mode == MUSIC_MODE_CONTROLS) {
-        set_music_mode(MUSIC_MODE_PAGE, true);
-        return;
-    }
+
     if(key == LV_KEY_HOME || key == LV_KEY_ESC) {
         s1_ui_router_home();
         update_page();
@@ -759,34 +756,28 @@ void s1_ui_key(uint32_t key)
         return;
     }
     if(current_page == S1_PAGE_MUSIC) {
-        if(music_mode == MUSIC_MODE_CONTROLS) {
-            if(key == LV_KEY_UP) {
-                set_music_mode(MUSIC_MODE_PAGE, true);
-                return;
-            }
+        if(key == LV_KEY_UP) {
+            s1_ui_router_home();
+            update_page();
+            return;
+        }
 
-            if(key == LV_KEY_LEFT) {
-                activate_music_control(MUSIC_CONTROL_PREVIOUS);
-                return;
-            }
+        if(key == LV_KEY_LEFT) {
+            activate_music_control(MUSIC_CONTROL_PREVIOUS);
+            return;
+        }
 
-            if(key == LV_KEY_RIGHT) {
-                activate_music_control(MUSIC_CONTROL_NEXT);
-                return;
-            }
-
-            if(key == LV_KEY_ENTER) {
-                activate_music_control(MUSIC_CONTROL_PLAY);
-                return;
-            }
-
+        if(key == LV_KEY_RIGHT) {
+            activate_music_control(MUSIC_CONTROL_NEXT);
             return;
         }
 
         if(key == LV_KEY_ENTER) {
-            set_music_mode(MUSIC_MODE_CONTROLS, true);
+            activate_music_control(MUSIC_CONTROL_PLAY);
             return;
         }
+
+        return;
     }
 
     if(current_page == S1_PAGE_LED) {
