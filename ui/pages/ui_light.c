@@ -42,7 +42,7 @@ static lv_obj_t *info_caption;
 static lv_obj_t *value_label;
 static lv_obj_t *hint_label;
 static lv_obj_t *error_label;
-static lv_obj_t *time_label;
+static lv_obj_t *global_time_label;
 static lv_obj_t *bulb_glass;
 static lv_obj_t *bulb_neck;
 static lv_obj_t *bulb_base;
@@ -90,10 +90,10 @@ static void update_time(void)
 {
     time_t now = time(NULL);
     struct tm *local = localtime(&now);
-    if(local == NULL || time_label == NULL) return;
+    if(local == NULL || global_time_label == NULL) return;
     char text[8];
     snprintf(text, sizeof(text), "%02d:%02d", local->tm_hour, local->tm_min);
-    lv_label_set_text(time_label, text);
+    lv_label_set_text(global_time_label, text);
 }
 
 static void set_bulb_on(bool on)
@@ -104,7 +104,7 @@ static void set_bulb_on(bool on)
     lv_obj_set_style_bg_color(bulb_neck, lv_color_hex(color), 0);
     lv_obj_set_style_bg_color(bulb_base, lv_color_hex(color), 0);
     lv_obj_set_style_shadow_color(bulb_glass, lv_color_hex(COLOR_WARM), 0);
-    lv_obj_set_style_shadow_width(bulb_glass, on ? 12 : 0, 0);
+    lv_obj_set_style_shadow_width(bulb_glass, on ? 14 : 0, 0);
     lv_obj_set_style_shadow_opa(bulb_glass, on ? LV_OPA_40 : LV_OPA_TRANSP, 0);
 }
 
@@ -203,50 +203,55 @@ static void refresh_timer_cb(lv_timer_t *timer)
 void s1_ui_light_init(lv_obj_t *parent)
 {
     hide_global_page_counter(parent);
-    panel = s1_ui_page_panel(parent);
 
+    /* Global clock lives directly on root so every page can show it. */
+    global_time_label = lv_label_create(parent);
+    style_label(global_time_label, &lv_font_montserrat_14, 0xA6A9AE);
+    lv_obj_set_width(global_time_label, 55);
+    lv_obj_set_style_text_align(global_time_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_align(global_time_label, LV_ALIGN_TOP_RIGHT, 0, 2);
+
+    panel = s1_ui_page_panel(parent);
+    lv_obj_set_size(panel, 146, 288);
+    lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, 8);
+
+    /* Larger bulb and room name share one header row. */
     bulb_glass = lv_obj_create(panel);
-    lv_obj_set_size(bulb_glass, 20, 20);
-    lv_obj_set_pos(bulb_glass, 4, 1);
+    lv_obj_set_size(bulb_glass, 28, 28);
+    lv_obj_set_pos(bulb_glass, 2, 18);
     lv_obj_set_scrollable(bulb_glass, false);
     lv_obj_set_style_radius(bulb_glass, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(bulb_glass, 1, 0);
     lv_obj_set_style_pad_all(bulb_glass, 0, 0);
 
     bulb_neck = lv_obj_create(panel);
-    lv_obj_set_size(bulb_neck, 8, 5);
-    lv_obj_set_pos(bulb_neck, 10, 18);
+    lv_obj_set_size(bulb_neck, 10, 6);
+    lv_obj_set_pos(bulb_neck, 11, 42);
     lv_obj_set_scrollable(bulb_neck, false);
     lv_obj_set_style_radius(bulb_neck, 2, 0);
     lv_obj_set_style_border_width(bulb_neck, 0, 0);
     lv_obj_set_style_pad_all(bulb_neck, 0, 0);
 
     bulb_base = lv_obj_create(panel);
-    lv_obj_set_size(bulb_base, 10, 3);
-    lv_obj_set_pos(bulb_base, 9, 23);
+    lv_obj_set_size(bulb_base, 12, 4);
+    lv_obj_set_pos(bulb_base, 10, 48);
     lv_obj_set_scrollable(bulb_base, false);
     lv_obj_set_style_radius(bulb_base, 2, 0);
     lv_obj_set_style_border_width(bulb_base, 0, 0);
     lv_obj_set_style_pad_all(bulb_base, 0, 0);
 
-    time_label = lv_label_create(panel);
-    style_label(time_label, &lv_font_montserrat_14, 0xA6A9AE);
-    lv_obj_set_width(time_label, 55);
-    lv_obj_set_style_text_align(time_label, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(time_label, 89, 3);
-
     room_label = lv_label_create(panel);
     style_label(room_label, &s1_ui_font_14, COLOR_TEXT);
-    lv_obj_set_pos(room_label, 2, 35);
+    lv_obj_set_pos(room_label, 39, 24);
 
     subtitle_label = lv_label_create(panel);
     style_label(subtitle_label, &lv_font_montserrat_10, COLOR_MUTED);
     lv_obj_set_style_text_letter_space(subtitle_label, 2, 0);
-    lv_obj_set_pos(subtitle_label, 2, 56);
+    lv_obj_set_pos(subtitle_label, 39, 48);
 
     status_chip = lv_obj_create(panel);
     lv_obj_set_size(status_chip, 37, 22);
-    lv_obj_set_pos(status_chip, 107, 34);
+    lv_obj_set_pos(status_chip, 107, 22);
     lv_obj_set_scrollable(status_chip, false);
     lv_obj_set_style_radius(status_chip, 11, 0);
     lv_obj_set_style_border_width(status_chip, 0, 0);
@@ -264,7 +269,7 @@ void s1_ui_light_init(lv_obj_t *parent)
 
     power_circle = lv_obj_create(panel);
     lv_obj_set_size(power_circle, 86, 86);
-    lv_obj_align(power_circle, LV_ALIGN_CENTER, 0, 2);
+    lv_obj_align(power_circle, LV_ALIGN_CENTER, 0, 8);
     lv_obj_set_scrollable(power_circle, false);
     lv_obj_set_style_radius(power_circle, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(power_circle, 1, 0);
@@ -280,11 +285,11 @@ void s1_ui_light_init(lv_obj_t *parent)
     off_label = lv_label_create(panel);
     lv_label_set_text(off_label, "OFF");
     style_label(off_label, &lv_font_montserrat_22, 0xD7D9DC);
-    lv_obj_align(off_label, LV_ALIGN_CENTER, 0, 65);
+    lv_obj_align(off_label, LV_ALIGN_CENTER, 0, 72);
 
     bar = lv_bar_create(panel);
-    lv_obj_set_size(bar, 52, 132);
-    lv_obj_set_pos(bar, 17, 82);
+    lv_obj_set_size(bar, 52, 142);
+    lv_obj_set_pos(bar, 17, 80);
     lv_bar_set_range(bar, 0, 100);
     lv_obj_set_style_radius(bar, 26, LV_PART_MAIN);
     lv_obj_set_style_radius(bar, 26, LV_PART_INDICATOR);
@@ -299,7 +304,7 @@ void s1_ui_light_init(lv_obj_t *parent)
     info_caption = lv_label_create(panel);
     lv_label_set_text(info_caption, "亮度");
     style_label(info_caption, &s1_ui_font_14, COLOR_WARM);
-    lv_obj_set_pos(info_caption, 81, 110);
+    lv_obj_set_pos(info_caption, 81, 108);
 
     value_label = lv_label_create(panel);
     lv_label_set_text(value_label, "50%");
@@ -307,7 +312,7 @@ void s1_ui_light_init(lv_obj_t *parent)
     lv_obj_set_width(value_label, 65);
     lv_label_set_long_mode(value_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(value_label, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_pos(value_label, 79, 135);
+    lv_obj_set_pos(value_label, 79, 133);
 
     hint_label = lv_label_create(panel);
     lv_label_set_text(hint_label, "OK  ON");
