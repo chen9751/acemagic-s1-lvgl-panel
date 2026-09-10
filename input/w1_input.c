@@ -1,5 +1,5 @@
 #include "w1_input.h"
-#include "../ui/s1_ui.h"
+#include "s1_input_dispatch.h"
 
 #include "lvgl/lvgl.h"
 
@@ -202,7 +202,7 @@ static void handle_key(
 
         case KEY_UP:
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 LV_KEY_UP
             );
 
@@ -211,7 +211,7 @@ static void handle_key(
 
         case KEY_DOWN:
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 LV_KEY_DOWN
             );
 
@@ -220,7 +220,7 @@ static void handle_key(
 
         case KEY_LEFT:
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 LV_KEY_LEFT
             );
 
@@ -229,7 +229,7 @@ static void handle_key(
 
         case KEY_RIGHT:
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 LV_KEY_RIGHT
             );
 
@@ -238,7 +238,7 @@ static void handle_key(
 
         case KEY_ENTER:
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 LV_KEY_ENTER
             );
 
@@ -254,7 +254,7 @@ static void handle_key(
                 "W1 BACK\n"
             );
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 LV_KEY_ESC
             );
 
@@ -270,7 +270,7 @@ static void handle_key(
                 "W1 HOME\n"
             );
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 LV_KEY_HOME
             );
 
@@ -286,7 +286,7 @@ static void handle_key(
                 "W1 MENU\n"
             );
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 S1_KEY_MENU
             );
 
@@ -301,7 +301,7 @@ static void handle_key(
                 "W1 VOL+\n"
             );
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 S1_KEY_VOL_UP
             );
 
@@ -316,7 +316,7 @@ static void handle_key(
                 "W1 VOL-\n"
             );
 
-            s1_ui_key(
+            s1_input_dispatch_key(
                 S1_KEY_VOL_DOWN
             );
 
