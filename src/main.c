@@ -34,6 +34,22 @@
 #include "hal/hal.h"
 
 /*********************
+ *  STATIC FUNCTIONS
+ *********************/
+
+static uint32_t s1_tick_get(void)
+{
+    /*
+     * LVGL timers need a monotonically increasing millisecond time source.
+     * The SDL build previously called lv_timer_handler() without advancing
+     * LVGL's tick, so long-running timers (for example the 3 s Home Assistant
+     * light-state refresh timer) did not reliably become due while the page
+     * remained open. SDL_GetTicks() supplies that runtime clock directly.
+     */
+    return (uint32_t)SDL_GetTicks();
+}
+
+/*********************
  *  GLOBAL FUNCTIONS
  *********************/
 
@@ -46,6 +62,12 @@ int main(int argc, char **argv)
 
     /* Initialize LVGL */
     lv_init();
+
+    /*
+     * Give LVGL a real millisecond clock before creating any UI timers.
+     * This is required by the periodic Home Assistant synchronization timer.
+     */
+    lv_tick_set_cb(s1_tick_get);
 
     /* Initialize SDL display/input */
     sdl_hal_init(170, 320);
@@ -73,7 +95,8 @@ int main(int argc, char **argv)
         w1_input_poll();
 
         /*
-         * Periodically call the LVGL timer handler.
+         * Periodically call the LVGL timer handler. Timer deadlines are
+         * calculated from the SDL tick callback registered above.
          */
         uint32_t sleep_time_ms = lv_timer_handler();
 
@@ -92,7 +115,3 @@ int main(int argc, char **argv)
 }
 
 #endif
-
-/*********************
- *  STATIC FUNCTIONS
- *********************/
