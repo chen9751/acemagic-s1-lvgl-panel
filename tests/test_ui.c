@@ -13,6 +13,7 @@ static int service(const char *entity, const char *name, int value)
 int ha_set_light_brightness(const char *entity, int value) { return service(entity, "brightness", value); }
 int ha_set_light_color_temperature(const char *entity, int value) { return service(entity, "temperature", value); }
 int ha_set_light_power(const char *entity, int on) { return service(entity, "power", on); }
+int ha_get_light_state(const char *entity, ha_light_state_t *state) { (void)entity; (void)state; return -1; }
 int led_set_mode(led_mode_t mode) { (void)mode; led_calls++; return 0; }
 static void music(s1_music_action_t action, void *data)
 { (void)data; music_calls++; last_action = action; }
