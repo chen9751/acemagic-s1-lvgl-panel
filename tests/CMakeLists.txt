@@ -13,7 +13,8 @@ add_subdirectory("${PROJECT_SOURCE_DIR}/lvgl" "${CMAKE_CURRENT_BINARY_DIR}/lvgl"
 add_executable(s1_ui_tests test_ui.c
     ../ui/s1_ui.c ../ui/ui_router.c ../ui/pages/ui_page.c ../ui/pages/ui_light.c
     ../ui/fonts/s1_home_info_font_14.c ../ui/fonts/s1_home_time_font_108.c
-    ../ui/fonts/s1_ui_font_14.c ../ui/fonts/s1_led_font_12.c)
+    ../ui/fonts/s1_ui_font_14.c ../ui/fonts/s1_led_font_12.c
+    ../ui/pages/ui_home_overlay.c ../ui/fonts/s1_nunito_extrabold_108.c)
 target_include_directories(s1_ui_tests PRIVATE "${PROJECT_SOURCE_DIR}")
 target_link_libraries(s1_ui_tests PRIVATE lvgl m)
 # Keep assertions active in Release builds too.

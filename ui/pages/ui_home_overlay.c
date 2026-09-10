@@ -13,6 +13,7 @@
 #define HOME_TEXT_MAIN    0xDCE7ED
 
 LV_FONT_DECLARE(s1_home_info_font_14);
+LV_FONT_DECLARE(s1_nunito_extrabold_108);
 
 static lv_obj_t *overlay;
 static lv_obj_t *small_time_label;
@@ -63,11 +64,11 @@ static void refresh_home_overlay(lv_timer_t *timer)
      * lightweight safety sync plus clock refresh, so page changes no longer
      * wait half a second for the old Home page to disappear/reappear. */
     if(s1_ui_router_current() == S1_PAGE_HOME) {
-        lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(overlay, false);
         update_clock_text();
     }
     else {
-        lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(overlay, true);
     }
 }
 
@@ -94,14 +95,14 @@ void s1_ui_home_overlay_set_weather(int temperature_c, int rain_probability_perc
 void s1_ui_home_overlay_show(void)
 {
     if(overlay == NULL) s1_ui_home_overlay_init();
-    lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(overlay, false);
     lv_obj_move_foreground(overlay);
     update_clock_text();
 }
 
 void s1_ui_home_overlay_hide(void)
 {
-    if(overlay != NULL) lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    if(overlay != NULL) lv_obj_set_hidden(overlay, true);
 }
 
 void s1_ui_home_overlay_init(void)
@@ -147,30 +148,24 @@ void s1_ui_home_overlay_init(void)
     lv_obj_set_style_text_color(rain_label, lv_color_hex(HOME_MIN_COLOR), 0);
     lv_obj_set_pos(rain_label, 14, 55);
 
-    /* Montserrat is more regular than the previous Fredoka clock face while
-     * keeping rounded corners. Scaling the 48 px glyphs keeps the two digits
-     * large enough for the 170 px S1 panel without the bubbly Fredoka shape. */
+    /* Full-screen labels center the native digit advances without transforms. */
     hour_label = lv_label_create(overlay);
     lv_label_set_text(hour_label, "12");
-    lv_obj_set_size(hour_label, 74, 52);
-    lv_obj_set_pos(hour_label, 48, 101);
+    lv_obj_set_size(hour_label, 170, LV_SIZE_CONTENT);
+    lv_obj_set_pos(hour_label, 0, 101);
     lv_obj_set_style_text_align(hour_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(hour_label, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_letter_space(hour_label, -2, 0);
+    lv_obj_set_style_text_font(hour_label, &s1_nunito_extrabold_108, 0);
+    lv_obj_set_style_text_letter_space(hour_label, 0, 0);
     lv_obj_set_style_text_color(hour_label, lv_color_hex(HOME_HOUR_COLOR), 0);
-    lv_obj_set_style_transform_scale_x(hour_label, 470, 0);
-    lv_obj_set_style_transform_scale_y(hour_label, 470, 0);
 
     minute_label = lv_label_create(overlay);
     lv_label_set_text(minute_label, "00");
-    lv_obj_set_size(minute_label, 74, 52);
-    lv_obj_set_pos(minute_label, 48, 204);
+    lv_obj_set_size(minute_label, 170, LV_SIZE_CONTENT);
+    lv_obj_set_pos(minute_label, 0, 204);
     lv_obj_set_style_text_align(minute_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(minute_label, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_letter_space(minute_label, -2, 0);
+    lv_obj_set_style_text_font(minute_label, &s1_nunito_extrabold_108, 0);
+    lv_obj_set_style_text_letter_space(minute_label, 0, 0);
     lv_obj_set_style_text_color(minute_label, lv_color_hex(HOME_MIN_COLOR), 0);
-    lv_obj_set_style_transform_scale_x(minute_label, 470, 0);
-    lv_obj_set_style_transform_scale_y(minute_label, 470, 0);
 
     date_label = lv_label_create(overlay);
     lv_label_set_text(date_label, "星期--  --月--日");

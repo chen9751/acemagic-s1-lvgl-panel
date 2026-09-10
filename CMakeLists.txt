@@ -160,6 +160,7 @@ set(
     ui/pages/ui_led.c
     ui/fonts/s1_home_info_font_14.c
     ui/fonts/s1_home_time_font_108.c
+    ui/fonts/s1_nunito_extrabold_108.c
     ui/fonts/s1_ui_font_14.c
     ui/fonts/s1_led_font_12.c
 

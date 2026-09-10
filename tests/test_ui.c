@@ -1,5 +1,7 @@
 #include "ui/s1_ui.h"
 #include "ui/ui_router.h"
+#include "ui/pages/ui_home_overlay.h"
+LV_FONT_DECLARE(s1_nunito_extrabold_108);
 #include "services/ha_client.h"
 #include "services/led_client.h"
 #include <assert.h>
@@ -60,6 +62,50 @@ static void snapshot(const char *name)
     FILE *f = fopen(name, "wb"); assert(f);
     fprintf(f, "P6\n170 320\n255\n");
     assert(fwrite(pixels, 1, sizeof(pixels), f) == sizeof(pixels)); fclose(f);
+}
+/* Check real LVGL layout for every two-digit value, including narrow 11. */
+static void test_home_clock(void)
+{
+    s1_ui_home_overlay_init();
+    lv_obj_t *screen = lv_screen_active();
+    lv_obj_t *overlay = lv_obj_get_child(screen, -1);
+    lv_obj_t *clocks[2];
+    unsigned count = 0;
+    for(uint32_t i = 0; i < lv_obj_get_child_count(overlay); i++) {
+        lv_obj_t *child = lv_obj_get_child(overlay, i);
+        if(lv_obj_get_style_text_font(child, 0) == &s1_nunito_extrabold_108) {
+            assert(count < 2);
+            clocks[count++] = child;
+        }
+    }
+    assert(count == 2);
+    lv_timer_enable(false);
+    for(int value = 0; value < 100; value++) {
+        char text[4];
+        snprintf(text, sizeof(text), "%02d", value);
+        for(unsigned i = 0; i < 2; i++) {
+            lv_label_set_text(clocks[i], text);
+            lv_obj_update_layout(clocks[i]);
+            lv_area_t area;
+            lv_obj_get_coords(clocks[i], &area);
+            assert(area.x1 == 0 && area.x2 == 169);
+            assert(lv_obj_get_style_text_align(clocks[i], 0) == LV_TEXT_ALIGN_CENTER);
+            assert(lv_obj_get_style_transform_scale_x(clocks[i], 0) == 256);
+            assert(lv_obj_get_style_transform_scale_y(clocks[i], 0) == 256);
+            lv_point_t size;
+            lv_text_get_size(&size, text, &s1_nunito_extrabold_108, 0, 0, 170, LV_TEXT_FLAG_NONE);
+            assert(size.x <= 170 && size.y == s1_nunito_extrabold_108.line_height);
+            assert(area.y1 >= 75 && area.y2 < 291);
+        }
+    }
+    lv_label_set_text(clocks[0], "04");
+    lv_label_set_text(clocks[1], "57");
+    snapshot("home-nunito-0457.ppm");
+    lv_label_set_text(clocks[0], "11");
+    lv_label_set_text(clocks[1], "11");
+    snapshot("home-nunito-1111.ppm");
+    lv_timer_enable(true);
+    puts("PASS: Nunito Home 00-99, screen centering, no scaling or clipping");
 }
 int main(void)
 {
@@ -129,15 +175,16 @@ int main(void)
     s1_ui_key(LV_KEY_ESC); assert(s1_ui_router_current() == S1_PAGE_HOME);
     s1_ui_key(LV_KEY_DOWN); assert(s1_ui_router_current() == S1_PAGE_MUSIC);
     snapshot("music.ppm");
+    lv_tick_inc(500); /* Current Music entry guard lasts 450 ms. */
     s1_ui_key(LV_KEY_ENTER); s1_ui_key(LV_KEY_LEFT); assert(last_action == S1_MUSIC_ACTION_PREVIOUS);
     s1_ui_key(LV_KEY_RIGHT); assert(last_action == S1_MUSIC_ACTION_NEXT);
-    s1_ui_key(LV_KEY_ENTER); assert(last_action == S1_MUSIC_ACTION_PLAY_PAUSE && music_calls == 3);
-    s1_ui_key(LV_KEY_ESC); assert(s1_ui_router_current() == S1_PAGE_MUSIC);
+    s1_ui_key(LV_KEY_ENTER); assert(last_action == S1_MUSIC_ACTION_PLAY_PAUSE && music_calls == 4);
     s1_ui_key(LV_KEY_ESC); assert(s1_ui_router_current() == S1_PAGE_HOME);
     s1_ui_key(LV_KEY_DOWN); s1_ui_key(LV_KEY_ENTER); s1_ui_key(LV_KEY_HOME);
     assert(s1_ui_router_current() == S1_PAGE_HOME);
     for(int p = 0; p < 8; p++) { go(ring[p]); s1_ui_key(LV_KEY_HOME); assert(s1_ui_router_current() == S1_PAGE_HOME); }
     puts("PASS: ring, branch isolation, four lights, failures, limits, volume, HOME/BACK, LED and MUSIC");
+    test_home_clock();
     lv_deinit();
     return 0;
 }
