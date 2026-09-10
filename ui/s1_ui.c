@@ -9,7 +9,25 @@
 #define SCREEN_W 170
 #define SCREEN_H 320
 
-#define HA_STUDY_LIGHT "light.yeelink_ceil40_d8b6_light"
+/*
+ * Home Assistant light entities
+ *
+ * Connected:
+ *   客厅灯
+ *   书房灯
+ *   卧室灯
+ *   小卧室灯
+ *   阳台灯 -> HA 晾衣架灯
+ *   浴室灯 -> HA 浴霸灯
+ *
+ * 床头灯暂不连接。
+ */
+#define HA_LIVING_LIGHT        "light.yeelink_ceil40_9771_light"
+#define HA_STUDY_LIGHT         "light.yeelink_ceil40_d8b6_light"
+#define HA_BEDROOM_LIGHT       "light.yeelink_ceiling17_b415_light"
+#define HA_SMALL_BEDROOM_LIGHT "light.yeelink_ceiling17_40d7_light"
+#define HA_BALCONY_LIGHT       "light.xiaomi_0002_bfe9_light"
+#define HA_BATHROOM_LIGHT      "light.yeelink_v20_6acb_light"
 
 #define HA_ICON_POWER   "\xEF\x80\x91"
 #define HA_ICON_LIGHT   "\xEF\x83\xAB"
@@ -144,6 +162,7 @@ static ha_item_t ha_items[HA_ITEM_COUNT] = {
     {
         .name = "客厅灯",
         .icon = HA_ICON_LIGHT,
+        .entity_id = HA_LIVING_LIGHT,
         .is_light = true,
         .is_adjustable = true,
         .brightness = 50,
@@ -163,6 +182,7 @@ static ha_item_t ha_items[HA_ITEM_COUNT] = {
     {
         .name = "卧室灯",
         .icon = HA_ICON_LIGHT,
+        .entity_id = HA_BEDROOM_LIGHT,
         .is_light = true,
         .is_adjustable = true,
         .brightness = 50,
@@ -178,6 +198,7 @@ static ha_item_t ha_items[HA_ITEM_COUNT] = {
     {
         .name = "小卧室灯",
         .icon = HA_ICON_LIGHT,
+        .entity_id = HA_SMALL_BEDROOM_LIGHT,
         .is_light = true,
         .is_adjustable = true,
         .brightness = 50,
@@ -187,12 +208,14 @@ static ha_item_t ha_items[HA_ITEM_COUNT] = {
     {
         .name = "阳台灯",
         .icon = HA_ICON_LIGHT,
+        .entity_id = HA_BALCONY_LIGHT,
         .is_light = true,
         .state = "OFF"
     },
     {
         .name = "浴室灯",
         .icon = HA_ICON_LIGHT,
+        .entity_id = HA_BATHROOM_LIGHT,
         .is_light = true,
         .state = "OFF"
     },
@@ -216,6 +239,26 @@ static ha_item_t ha_items[HA_ITEM_COUNT] = {
 
 static int ha_selected = 0;
 static ha_adjust_mode_t ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
+
+
+/*
+ * Only lights with a real entity_id participate in:
+ *
+ *   1. "x 盏亮" count
+ *   2. the "关灯" action
+ *
+ * This deliberately excludes the unconnected 床头灯.
+ */
+static bool ha_item_is_managed_light(
+    const ha_item_t *item
+)
+{
+    return
+        item != NULL &&
+        item->is_light &&
+        item->entity_id != NULL &&
+        item->entity_id[0] != '\0';
+}
 
 
 /* =========================================================
@@ -654,55 +697,21 @@ static void update_ha_rows(void)
 }
 
 
-static void refresh_ha_states(void)
-{
-    int count = 0;
-
-    if(ha_count_on_lights(&count) == 0) {
-        snprintf(
-            ha_items[HA_ITEM_ALL_OFF].state,
-            sizeof(ha_items[HA_ITEM_ALL_OFF].state),
-            "%d 盏亮",
-            count
-        );
-    }
-    else {
-        snprintf(
-            ha_items[HA_ITEM_ALL_OFF].state,
-            sizeof(ha_items[HA_ITEM_ALL_OFF].state),
-            "-- 盏亮"
-        );
-    }
-
-    char state[20];
-
-    if(ha_get_state(HA_STUDY_LIGHT, state, sizeof(state)) == 0) {
-        ha_items[HA_ITEM_STUDY_LIGHT].is_on = strcmp(state, "on") == 0;
-        snprintf(
-            ha_items[HA_ITEM_STUDY_LIGHT].state,
-            sizeof(ha_items[HA_ITEM_STUDY_LIGHT].state),
-            "%s",
-            ha_items[HA_ITEM_STUDY_LIGHT].is_on ? "ON" : "OFF"
-        );
-    }
-    else {
-        snprintf(
-            ha_items[HA_ITEM_STUDY_LIGHT].state,
-            sizeof(ha_items[HA_ITEM_STUDY_LIGHT].state),
-            "--"
-        );
-    }
-
-    update_ha_rows();
-}
-
-
+/*
+ * Count only the six real lights currently connected to this UI.
+ *
+ * Unconnected UI items such as 床头灯 are deliberately ignored.
+ * Other Home Assistant light.* entities are also ignored.
+ */
 static void update_ha_light_count_from_items(void)
 {
     int count = 0;
 
     for(int i = 0; i < HA_ITEM_COUNT; i++) {
-        if(ha_items[i].is_light && ha_items[i].is_on) {
+        if(
+            ha_item_is_managed_light(&ha_items[i]) &&
+            ha_items[i].is_on
+        ) {
             count++;
         }
     }
@@ -716,32 +725,98 @@ static void update_ha_light_count_from_items(void)
 }
 
 
+/*
+ * Refresh all Home Assistant lights actually connected to this UI.
+ *
+ * This replaces the previous behaviour that only refreshed the
+ * study light and used HA's global light.* count.
+ */
+static void refresh_ha_states(void)
+{
+    char state[20];
+
+    for(int i = 0; i < HA_ITEM_COUNT; i++) {
+        ha_item_t *item = &ha_items[i];
+
+        if(!ha_item_is_managed_light(item)) {
+            continue;
+        }
+
+        if(
+            ha_get_state(
+                item->entity_id,
+                state,
+                sizeof(state)
+            ) == 0
+        ) {
+            item->is_on = strcmp(state, "on") == 0;
+
+            snprintf(
+                item->state,
+                sizeof(item->state),
+                "%s",
+                item->is_on ? "ON" : "OFF"
+            );
+        }
+        else {
+            item->is_on = false;
+
+            snprintf(
+                item->state,
+                sizeof(item->state),
+                "--"
+            );
+        }
+    }
+
+    update_ha_light_count_from_items();
+    update_ha_rows();
+}
+
+
+/*
+ * Turn off only the lights managed by the S1 UI.
+ *
+ * We intentionally do NOT call ha_turn_off_all_lights(),
+ * because that function currently targets Home Assistant's
+ * entity_id "all" and would also turn off unrelated light.*
+ * entities such as ambient lights and indicator lights.
+ */
+static void turn_off_managed_ha_lights(void)
+{
+    for(int i = 0; i < HA_ITEM_COUNT; i++) {
+        ha_item_t *item = &ha_items[i];
+
+        if(
+            !ha_item_is_managed_light(item) ||
+            !item->is_on
+        ) {
+            continue;
+        }
+
+        if(ha_toggle(item->entity_id) == 0) {
+            item->is_on = false;
+
+            snprintf(
+                item->state,
+                sizeof(item->state),
+                "OFF"
+            );
+        }
+    }
+
+    /*
+     * Read the real states again after sending the commands.
+     * This also recalculates "x 盏亮".
+     */
+    refresh_ha_states();
+}
+
+
 static void activate_ha_item(void)
 {
     if(ha_selected == HA_ITEM_ALL_OFF) {
-        if(ha_turn_off_all_lights() == 0) {
-            snprintf(
-                ha_items[HA_ITEM_ALL_OFF].state,
-                sizeof(ha_items[HA_ITEM_ALL_OFF].state),
-                "0 盏亮"
-            );
-
-            for(int i = 0; i < HA_ITEM_COUNT; i++) {
-                if(ha_items[i].is_light) {
-                    ha_items[i].is_on = false;
-
-                    if(ha_items[i].entity_id != NULL) {
-                        snprintf(
-                            ha_items[i].state,
-                            sizeof(ha_items[i].state),
-                            "OFF"
-                        );
-                    }
-                }
-            }
-        }
-
-        update_ha_rows();
+        turn_off_managed_ha_lights();
         return;
     }
 
@@ -753,6 +828,13 @@ static void activate_ha_item(void)
 
     ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
 
+    /*
+     * Bedside light is intentionally not connected yet.
+     * Preserve the existing local UI behaviour without sending
+     * anything to Home Assistant.
+     *
+     * It is NOT included in the real HA light count.
+     */
     if(item->entity_id == NULL) {
         item->is_on = !item->is_on;
         update_ha_light_count_from_items();
