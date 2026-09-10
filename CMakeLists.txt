@@ -157,6 +157,7 @@ set(
     ui/ui_router.c
     ui/pages/ui_page.c
     ui/pages/ui_light.c
+    ui/pages/ui_led.c
     ui/fonts/s1_home_info_font_14.c
     ui/fonts/s1_home_time_font_108.c
     ui/fonts/s1_ui_font_14.c
