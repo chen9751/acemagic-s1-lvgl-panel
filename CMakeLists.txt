@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.12.4)
 project(lvgl C CXX)
 
+option(S1_UI_TESTS_ONLY "Build hardware-free UI regression tests" OFF)
+if(S1_UI_TESTS_ONLY)
+    enable_testing()
+    add_subdirectory(tests)
+    return()
+endif()
+
 # Set the correct FreeRTOS port for your system (e.g., Posix for WSL)
 set(FREERTOS_PORT GCC_POSIX CACHE STRING "Port for FreeRTOS on Posix environment")
 
@@ -147,6 +154,9 @@ set(
     src/hal/hal.c
 
     ui/s1_ui.c
+    ui/ui_router.c
+    ui/pages/ui_page.c
+    ui/pages/ui_light.c
     ui/fonts/s1_home_info_font_14.c
     ui/fonts/s1_home_time_font_108.c
     ui/fonts/s1_ui_font_14.c

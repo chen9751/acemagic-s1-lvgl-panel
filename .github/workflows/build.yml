@@ -1,0 +1,29 @@
+name: S1 Linux build and UI checks
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned LVGL
+        run: git submodule update --init --depth 1 lvgl
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev libcurl4-openssl-dev
+      - name: Check private configuration is excluded
+        run: |
+          git check-ignore config/ha.conf
+          test -z "$(git ls-files config/ha.conf)"
+      - name: Build Linux application
+        run: |
+          cmake -S . -B build/app -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/app -j 2
+      - name: Build and run UI regression checks
+        run: |
+          cmake -S . -B build/tests -DS1_UI_TESTS_ONLY=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/tests -j 2
+          ctest --test-dir build/tests --output-on-failure

@@ -1,5 +1,7 @@
 #include "s1_ui.h"
-#include "../services/ha_client.h"
+#include "ui_router.h"
+#include "pages/ui_page.h"
+#include "pages/ui_light.h"
 #include "../services/led_client.h"
 
 #include <stdio.h>
@@ -9,41 +11,10 @@
 #define SCREEN_W 170
 #define SCREEN_H 320
 
-/*
- * Home Assistant light entities
- *
- * Connected:
- *   客厅灯
- *   书房灯
- *   卧室灯
- *   小卧室灯
- *   阳台灯 -> HA 晾衣架灯
- *   浴室灯 -> HA 浴霸灯
- *
- * 床头灯暂不连接。
- */
-#define HA_LIVING_LIGHT        "light.yeelink_ceil40_9771_light"
-#define HA_STUDY_LIGHT         "light.yeelink_ceil40_d8b6_light"
-#define HA_BEDROOM_LIGHT       "light.yeelink_ceiling17_b415_light"
-#define HA_SMALL_BEDROOM_LIGHT "light.yeelink_ceiling17_40d7_light"
-#define HA_BALCONY_LIGHT       "light.xiaomi_0002_bfe9_light"
-#define HA_BATHROOM_LIGHT      "light.yeelink_v20_6acb_light"
-
-#define HA_ICON_POWER   "\xEF\x80\x91"
-#define HA_ICON_LIGHT   "\xEF\x83\xAB"
-#define HA_ICON_AC      "\xEF\x8B\x9C"
-#define HA_ICON_CURTAIN "\xEF\x8B\x90"
-#define HA_ICON_HEATER  "\xEF\x96\x93"
-
 #define MUSIC_ICON_PREVIOUS "\xEF\x81\x88"
 #define MUSIC_ICON_PLAY     "\xEF\x81\x8B"
 #define MUSIC_ICON_PAUSE    "\xEF\x81\x8C"
 #define MUSIC_ICON_NEXT     "\xEF\x81\x91"
-
-#define HA_COLOR_BLUE      0x41BDF5
-#define HA_COLOR_SELECTED  0x18374A
-#define HA_COLOR_LIGHT_ON  0xF4C54E
-#define HA_COLOR_POWER     0xEF7D72
 
 #define MUSIC_COLOR_BLUE      0x18B9D9
 #define MUSIC_COLOR_BUTTON    0x121A25
@@ -66,32 +37,6 @@ LV_FONT_DECLARE(s1_home_info_font_14);
  * Page definitions
  * ========================================================= */
 
-typedef enum {
-    PAGE_HOME = 0,
-    PAGE_HA,
-    PAGE_MUSIC,
-    PAGE_LED,
-    PAGE_COUNT
-} page_id_t;
-
-
-typedef struct {
-    const char *name;
-    const char *subtitle;
-} page_config_t;
-
-
-static const page_config_t pages[PAGE_COUNT] = {
-    { "",         ""              },
-    { "",         "HomeAssistant" },
-    { "",         "Music"         },
-    { "",         "LED"           }
-};
-
-
-static page_id_t current_page = PAGE_HOME;
-
-
 /* =========================================================
  * Home watch face
  * ========================================================= */
@@ -105,160 +50,6 @@ static const char *weekday_names[] = {
     "星期五",
     "星期六"
 };
-
-
-/* =========================================================
- * Home Assistant menu
- * ========================================================= */
-
-typedef enum {
-    HA_ITEM_ALL_OFF = 0,
-    HA_ITEM_LIVING_LIGHT,
-    HA_ITEM_STUDY_LIGHT,
-    HA_ITEM_BEDROOM_LIGHT,
-    HA_ITEM_BEDSIDE_LIGHT,
-    HA_ITEM_SMALL_BEDROOM_LIGHT,
-    HA_ITEM_BALCONY_LIGHT,
-    HA_ITEM_BATHROOM_LIGHT,
-    HA_ITEM_AC,
-    HA_ITEM_CURTAIN,
-    HA_ITEM_HEATER,
-    HA_ITEM_COUNT
-} ha_item_id_t;
-
-
-typedef enum {
-    HA_ADJUST_BRIGHTNESS = 0,
-    HA_ADJUST_COLOR_TEMPERATURE
-} ha_adjust_mode_t;
-
-
-typedef struct {
-    const char *name;
-    const char *icon;
-    const char *entity_id;
-    bool is_light;
-    bool is_adjustable;
-    bool is_on;
-    int brightness;
-    int color_temperature;
-    char state[20];
-    lv_obj_t *row;
-    lv_obj_t *icon_label;
-    lv_obj_t *name_label;
-    lv_obj_t *state_label;
-    lv_obj_t *control_mode_label;
-    lv_obj_t *control_value_label;
-    lv_obj_t *control_bar;
-} ha_item_t;
-
-
-static ha_item_t ha_items[HA_ITEM_COUNT] = {
-    {
-        .name = "关灯",
-        .icon = HA_ICON_POWER,
-        .state = "-- 盏亮"
-    },
-    {
-        .name = "客厅灯",
-        .icon = HA_ICON_LIGHT,
-        .entity_id = HA_LIVING_LIGHT,
-        .is_light = true,
-        .is_adjustable = true,
-        .brightness = 50,
-        .color_temperature = 50,
-        .state = "OFF"
-    },
-    {
-        .name = "书房灯",
-        .icon = HA_ICON_LIGHT,
-        .entity_id = HA_STUDY_LIGHT,
-        .is_light = true,
-        .is_adjustable = true,
-        .brightness = 50,
-        .color_temperature = 50,
-        .state = "OFF"
-    },
-    {
-        .name = "卧室灯",
-        .icon = HA_ICON_LIGHT,
-        .entity_id = HA_BEDROOM_LIGHT,
-        .is_light = true,
-        .is_adjustable = true,
-        .brightness = 50,
-        .color_temperature = 50,
-        .state = "OFF"
-    },
-    {
-        .name = "床头灯",
-        .icon = HA_ICON_LIGHT,
-        .is_light = true,
-        .state = "OFF"
-    },
-    {
-        .name = "小卧室灯",
-        .icon = HA_ICON_LIGHT,
-        .entity_id = HA_SMALL_BEDROOM_LIGHT,
-        .is_light = true,
-        .is_adjustable = true,
-        .brightness = 50,
-        .color_temperature = 50,
-        .state = "OFF"
-    },
-    {
-        .name = "阳台灯",
-        .icon = HA_ICON_LIGHT,
-        .entity_id = HA_BALCONY_LIGHT,
-        .is_light = true,
-        .state = "OFF"
-    },
-    {
-        .name = "浴室灯",
-        .icon = HA_ICON_LIGHT,
-        .entity_id = HA_BATHROOM_LIGHT,
-        .is_light = true,
-        .state = "OFF"
-    },
-    {
-        .name = "空调",
-        .icon = HA_ICON_AC,
-        .state = "--"
-    },
-    {
-        .name = "窗帘",
-        .icon = HA_ICON_CURTAIN,
-        .state = "--"
-    },
-    {
-        .name = "浴霸",
-        .icon = HA_ICON_HEATER,
-        .state = "--"
-    }
-};
-
-
-static int ha_selected = 0;
-static ha_adjust_mode_t ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
-
-
-/*
- * Only lights with a real entity_id participate in:
- *
- *   1. "x 盏亮" count
- *   2. the "关灯" action
- *
- * This deliberately excludes the unconnected 床头灯.
- */
-static bool ha_item_is_managed_light(
-    const ha_item_t *item
-)
-{
-    return
-        item != NULL &&
-        item->is_light &&
-        item->entity_id != NULL &&
-        item->entity_id[0] != '\0';
-}
 
 
 /* =========================================================
@@ -324,12 +115,8 @@ static int led_error = -1;
  * ========================================================= */
 
 static lv_obj_t *root;
-static lv_obj_t *title_label;
 static lv_obj_t *subtitle_label;
 static lv_obj_t *page_label;
-static lv_obj_t *center_panel;
-static lv_obj_t *center_text;
-static lv_obj_t *footer_label;
 static lv_obj_t *home_panel;
 static lv_obj_t *home_hour_label;
 static lv_obj_t *home_minute_label;
@@ -338,7 +125,6 @@ static lv_obj_t *home_date_label;
 static lv_obj_t *home_weekday_label;
 static lv_obj_t *home_temperature_label;
 static lv_obj_t *home_rain_label;
-static lv_obj_t *ha_panel;
 static lv_obj_t *music_panel;
 static lv_obj_t *music_info_box;
 static lv_obj_t *music_info_content;
@@ -368,18 +154,6 @@ static void set_hidden(
 )
 {
     lv_obj_set_hidden(obj, hidden);
-}
-
-
-static void show_standard_content(bool visible)
-{
-    set_hidden(title_label, !visible);
-    set_hidden(center_panel, !visible);
-    set_hidden(footer_label, !visible);
-    set_hidden(ha_panel, visible);
-    set_hidden(music_panel, true);
-    set_hidden(led_panel, true);
-    set_hidden(home_panel, true);
 }
 
 
@@ -472,456 +246,6 @@ void s1_ui_home_set_weather(
 /* =========================================================
  * Home Assistant UI
  * ========================================================= */
-
-static lv_obj_t *create_ha_category(
-    const char *text
-)
-{
-    lv_obj_t *label = lv_label_create(ha_panel);
-
-    lv_label_set_text(label, text);
-    lv_obj_set_width(label, LV_PCT(100));
-    lv_obj_set_height(label, 18);
-    lv_obj_set_style_text_color(label, lv_color_hex(0x607687), 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_10, 0);
-    lv_obj_set_style_pad_left(label, 6, 0);
-    lv_obj_set_style_pad_top(label, 3, 0);
-
-    return label;
-}
-
-
-static void create_ha_row(
-    ha_item_t *item
-)
-{
-    item->row = lv_obj_create(ha_panel);
-
-    lv_obj_set_width(item->row, LV_PCT(100));
-    lv_obj_set_height(item->row, 34);
-    lv_obj_set_scrollable(item->row, false);
-    lv_obj_set_style_radius(item->row, 8, 0);
-    lv_obj_set_style_border_width(item->row, 0, 0);
-    lv_obj_set_style_bg_opa(item->row, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(item->row, 0, 0);
-
-    item->icon_label = lv_label_create(item->row);
-    lv_label_set_text(item->icon_label, item->icon);
-    lv_obj_set_style_text_font(item->icon_label, &s1_ui_font_14, 0);
-    lv_obj_align(item->icon_label, LV_ALIGN_TOP_LEFT, 7, 9);
-
-    item->name_label = lv_label_create(item->row);
-    lv_label_set_text(item->name_label, item->name);
-    lv_obj_set_style_text_font(item->name_label, &s1_ui_font_14, 0);
-    lv_obj_set_style_text_color(item->name_label, lv_color_hex(0xDCE4EA), 0);
-    lv_obj_align(item->name_label, LV_ALIGN_TOP_LEFT, 29, 8);
-
-    item->state_label = lv_label_create(item->row);
-    lv_label_set_text(item->state_label, item->state);
-    lv_obj_set_style_text_font(item->state_label, &s1_ui_font_14, 0);
-    lv_obj_set_style_text_color(item->state_label, lv_color_hex(0x7F8A95), 0);
-    lv_obj_align(item->state_label, LV_ALIGN_TOP_RIGHT, -7, 8);
-
-    if(!item->is_adjustable) {
-        return;
-    }
-
-    item->control_mode_label = lv_label_create(item->row);
-    lv_label_set_text(item->control_mode_label, "亮度");
-    lv_obj_set_style_text_font(
-        item->control_mode_label,
-        &s1_ui_font_14,
-        0
-    );
-    lv_obj_set_style_text_color(
-        item->control_mode_label,
-        lv_color_hex(0x82919C),
-        0
-    );
-    lv_obj_set_pos(item->control_mode_label, 7, 35);
-
-    item->control_value_label = lv_label_create(item->row);
-    lv_label_set_text(item->control_value_label, "50%");
-    lv_obj_set_style_text_font(
-        item->control_value_label,
-        &lv_font_montserrat_10,
-        0
-    );
-    lv_obj_set_style_text_color(
-        item->control_value_label,
-        lv_color_hex(0xC8D3DA),
-        0
-    );
-    lv_obj_align(item->control_value_label, LV_ALIGN_TOP_RIGHT, -7, 37);
-
-    item->control_bar = lv_bar_create(item->row);
-    lv_obj_set_size(item->control_bar, 124, 5);
-    lv_obj_set_pos(item->control_bar, 7, 54);
-    lv_bar_set_range(item->control_bar, 0, 100);
-    lv_bar_set_value(item->control_bar, item->brightness, LV_ANIM_OFF);
-    lv_obj_set_style_radius(item->control_bar, 3, LV_PART_MAIN);
-    lv_obj_set_style_radius(item->control_bar, 3, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(
-        item->control_bar,
-        lv_color_hex(0x26323A),
-        LV_PART_MAIN
-    );
-    lv_obj_set_style_bg_opa(item->control_bar, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(
-        item->control_bar,
-        lv_color_hex(HA_COLOR_BLUE),
-        LV_PART_INDICATOR
-    );
-
-    set_hidden(item->control_mode_label, true);
-    set_hidden(item->control_value_label, true);
-    set_hidden(item->control_bar, true);
-}
-
-
-static int ha_color_temperature_kelvin(
-    const ha_item_t *item
-)
-{
-    return 2700 + item->color_temperature * 38;
-}
-
-
-static void update_ha_rows(void)
-{
-    for(int i = 0; i < HA_ITEM_COUNT; i++) {
-        ha_item_t *item = &ha_items[i];
-        bool selected = i == ha_selected;
-        bool expanded =
-            selected &&
-            item->is_adjustable &&
-            item->is_on;
-
-        if(item->is_light) {
-            snprintf(
-                item->state,
-                sizeof(item->state),
-                "%s",
-                item->is_on ? "ON" : "OFF"
-            );
-        }
-
-        lv_label_set_text(item->state_label, item->state);
-        lv_obj_set_height(item->row, expanded ? 68 : 34);
-        lv_obj_set_style_bg_color(item->row, lv_color_hex(HA_COLOR_SELECTED), 0);
-        lv_obj_set_style_bg_opa(
-            item->row,
-            selected ? LV_OPA_COVER : LV_OPA_TRANSP,
-            0
-        );
-        lv_obj_set_style_text_color(
-            item->name_label,
-            selected ? lv_color_hex(0xF7FBFD) : lv_color_hex(0xDCE4EA),
-            0
-        );
-        lv_obj_set_style_text_color(
-            item->state_label,
-            selected ? lv_color_hex(0x9EDDF8) : lv_color_hex(0x7F8A95),
-            0
-        );
-
-        lv_color_t icon_color = lv_color_hex(0x6F7B87);
-
-        if(i == HA_ITEM_ALL_OFF) {
-            icon_color = lv_color_hex(HA_COLOR_POWER);
-        }
-        else if(item->is_light && item->is_on) {
-            icon_color = lv_color_hex(HA_COLOR_LIGHT_ON);
-        }
-        else if(selected || !item->is_light) {
-            icon_color = lv_color_hex(HA_COLOR_BLUE);
-        }
-
-        lv_obj_set_style_text_color(item->icon_label, icon_color, 0);
-
-        if(!item->is_adjustable) {
-            continue;
-        }
-
-        if(expanded) {
-            char control_value[16];
-            int value;
-
-            set_hidden(item->control_mode_label, false);
-            set_hidden(item->control_value_label, false);
-            set_hidden(item->control_bar, false);
-
-            if(ha_adjust_mode == HA_ADJUST_COLOR_TEMPERATURE) {
-                value = item->color_temperature;
-                lv_label_set_text(item->control_mode_label, "色温");
-                snprintf(
-                    control_value,
-                    sizeof(control_value),
-                    "%dK",
-                    ha_color_temperature_kelvin(item)
-                );
-                lv_obj_set_style_bg_color(
-                    item->control_bar,
-                    lv_color_hex(0xF2B15C),
-                    LV_PART_INDICATOR
-                );
-            }
-            else {
-                value = item->brightness;
-                lv_label_set_text(item->control_mode_label, "亮度");
-                snprintf(
-                    control_value,
-                    sizeof(control_value),
-                    "%d%%",
-                    item->brightness
-                );
-                lv_obj_set_style_bg_color(
-                    item->control_bar,
-                    lv_color_hex(HA_COLOR_BLUE),
-                    LV_PART_INDICATOR
-                );
-            }
-
-            lv_label_set_text(item->control_value_label, control_value);
-            lv_bar_set_value(item->control_bar, value, LV_ANIM_ON);
-        }
-        else {
-            set_hidden(item->control_mode_label, true);
-            set_hidden(item->control_value_label, true);
-            set_hidden(item->control_bar, true);
-        }
-    }
-
-    lv_obj_update_layout(ha_panel);
-    lv_obj_scroll_to_view(ha_items[ha_selected].row, LV_ANIM_OFF);
-}
-
-
-/*
- * Count only the six real lights currently connected to this UI.
- *
- * Unconnected UI items such as 床头灯 are deliberately ignored.
- * Other Home Assistant light.* entities are also ignored.
- */
-static void update_ha_light_count_from_items(void)
-{
-    int count = 0;
-
-    for(int i = 0; i < HA_ITEM_COUNT; i++) {
-        if(
-            ha_item_is_managed_light(&ha_items[i]) &&
-            ha_items[i].is_on
-        ) {
-            count++;
-        }
-    }
-
-    snprintf(
-        ha_items[HA_ITEM_ALL_OFF].state,
-        sizeof(ha_items[HA_ITEM_ALL_OFF].state),
-        "%d 盏亮",
-        count
-    );
-}
-
-
-/*
- * Refresh all Home Assistant lights actually connected to this UI.
- *
- * This replaces the previous behaviour that only refreshed the
- * study light and used HA's global light.* count.
- */
-static void refresh_ha_states(void)
-{
-    char state[20];
-
-    for(int i = 0; i < HA_ITEM_COUNT; i++) {
-        ha_item_t *item = &ha_items[i];
-
-        if(!ha_item_is_managed_light(item)) {
-            continue;
-        }
-
-        if(
-            ha_get_state(
-                item->entity_id,
-                state,
-                sizeof(state)
-            ) == 0
-        ) {
-            item->is_on = strcmp(state, "on") == 0;
-
-            snprintf(
-                item->state,
-                sizeof(item->state),
-                "%s",
-                item->is_on ? "ON" : "OFF"
-            );
-        }
-        else {
-            item->is_on = false;
-
-            snprintf(
-                item->state,
-                sizeof(item->state),
-                "--"
-            );
-        }
-    }
-
-    update_ha_light_count_from_items();
-    update_ha_rows();
-}
-
-
-/*
- * Turn off only the lights managed by the S1 UI.
- *
- * We intentionally do NOT call ha_turn_off_all_lights(),
- * because that function currently targets Home Assistant's
- * entity_id "all" and would also turn off unrelated light.*
- * entities such as ambient lights and indicator lights.
- */
-static void turn_off_managed_ha_lights(void)
-{
-    for(int i = 0; i < HA_ITEM_COUNT; i++) {
-        ha_item_t *item = &ha_items[i];
-
-        if(
-            !ha_item_is_managed_light(item) ||
-            !item->is_on
-        ) {
-            continue;
-        }
-
-        if(ha_toggle(item->entity_id) == 0) {
-            item->is_on = false;
-
-            snprintf(
-                item->state,
-                sizeof(item->state),
-                "OFF"
-            );
-        }
-    }
-
-    /*
-     * Read the real states again after sending the commands.
-     * This also recalculates "x 盏亮".
-     */
-    refresh_ha_states();
-}
-
-
-static void activate_ha_item(void)
-{
-    if(ha_selected == HA_ITEM_ALL_OFF) {
-        turn_off_managed_ha_lights();
-        return;
-    }
-
-    ha_item_t *item = &ha_items[ha_selected];
-
-    if(!item->is_light) {
-        return;
-    }
-
-    ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
-
-    /*
-     * Bedside light is intentionally not connected yet.
-     * Preserve the existing local UI behaviour without sending
-     * anything to Home Assistant.
-     *
-     * It is NOT included in the real HA light count.
-     */
-    if(item->entity_id == NULL) {
-        item->is_on = !item->is_on;
-        update_ha_light_count_from_items();
-        update_ha_rows();
-        return;
-    }
-
-    if(ha_toggle(item->entity_id) != 0) {
-        return;
-    }
-
-    refresh_ha_states();
-}
-
-
-static void toggle_ha_adjust_mode(void)
-{
-    ha_item_t *item = &ha_items[ha_selected];
-
-    if(!item->is_adjustable || !item->is_on) {
-        return;
-    }
-
-    ha_adjust_mode =
-        ha_adjust_mode == HA_ADJUST_BRIGHTNESS
-        ? HA_ADJUST_COLOR_TEMPERATURE
-        : HA_ADJUST_BRIGHTNESS;
-
-    update_ha_rows();
-}
-
-
-static void adjust_ha_item(
-    int delta
-)
-{
-    ha_item_t *item = &ha_items[ha_selected];
-
-    if(!item->is_adjustable || !item->is_on) {
-        return;
-    }
-
-    int *value =
-        ha_adjust_mode == HA_ADJUST_BRIGHTNESS
-        ? &item->brightness
-        : &item->color_temperature;
-    int minimum =
-        ha_adjust_mode == HA_ADJUST_BRIGHTNESS
-        ? 10
-        : 0;
-    int next = *value + delta;
-
-    if(next < minimum) {
-        next = minimum;
-    }
-    else if(next > 100) {
-        next = 100;
-    }
-
-    if(next == *value) {
-        return;
-    }
-
-    if(item->entity_id != NULL) {
-        int result;
-
-        if(ha_adjust_mode == HA_ADJUST_BRIGHTNESS) {
-            result = ha_set_light_brightness(item->entity_id, next);
-        }
-        else {
-            int kelvin = 2700 + next * 38;
-
-            result = ha_set_light_color_temperature(
-                item->entity_id,
-                kelvin
-            );
-        }
-
-        if(result != 0) {
-            return;
-        }
-    }
-
-    *value = next;
-    update_ha_rows();
-}
-
 
 /* =========================================================
  * Music UI and interaction
@@ -1375,93 +699,35 @@ static void activate_led_item(void)
 
 static void update_page(void)
 {
-    lv_label_set_text(subtitle_label, pages[current_page].subtitle);
+    s1_page_id_t page = s1_ui_router_current();
+    set_hidden(home_panel, true);
+    set_hidden(music_panel, true);
+    set_hidden(led_panel, true);
+    s1_ui_light_hide();
+    s1_ui_placeholder_hide();
+    set_hidden(subtitle_label, page == S1_PAGE_HOME);
+    lv_label_set_text(subtitle_label, s1_ui_page_name(page));
+    lv_obj_set_style_text_font(subtitle_label, &s1_ui_font_14, 0);
+    lv_obj_set_style_text_color(subtitle_label, lv_color_hex(0x41BDF5), 0);
+    if(s1_ui_router_is_horizontal_page(page)) {
+        char position[16];
+        snprintf(position, sizeof(position), "%d / 8", page + 1);
+        lv_label_set_text(page_label, position);
+    } else lv_label_set_text(page_label, "");
 
-    char page_buf[16];
-
-    snprintf(
-        page_buf,
-        sizeof(page_buf),
-        "%d / %d",
-        current_page + 1,
-        PAGE_COUNT
-    );
-
-    lv_label_set_text(page_label, page_buf);
-
-    if(current_page == PAGE_HOME) {
-        set_hidden(subtitle_label, true);
-        set_hidden(title_label, true);
-        set_hidden(center_panel, true);
-        set_hidden(footer_label, true);
-        set_hidden(ha_panel, true);
-        set_hidden(music_panel, true);
-        set_hidden(led_panel, true);
+    if(page == S1_PAGE_HOME) {
         set_hidden(home_panel, false);
         update_home_clock(NULL);
-        return;
-    }
-
-    set_hidden(subtitle_label, false);
-
-    if(current_page == PAGE_HA) {
-        show_standard_content(false);
-        lv_obj_set_style_text_color(subtitle_label, lv_color_hex(HA_COLOR_BLUE), 0);
-        lv_obj_set_style_text_font(subtitle_label, &lv_font_montserrat_14, 0);
-        refresh_ha_states();
-        return;
-    }
-
-    if(current_page == PAGE_MUSIC) {
-        set_hidden(title_label, true);
-        set_hidden(center_panel, true);
-        set_hidden(footer_label, true);
-        set_hidden(ha_panel, true);
-        set_hidden(led_panel, true);
+    } else if(page == S1_PAGE_MUSIC) {
         set_hidden(music_panel, false);
-        set_hidden(home_panel, true);
-        lv_obj_set_style_text_color(
-            subtitle_label,
-            lv_color_hex(MUSIC_COLOR_BLUE),
-            0
-        );
-        lv_obj_set_style_text_font(
-            subtitle_label,
-            &lv_font_montserrat_14,
-            0
-        );
+        lv_obj_set_style_text_font(subtitle_label, &lv_font_montserrat_14, 0);
         set_music_mode(MUSIC_MODE_PAGE, false);
-        return;
-    }
-
-    if(current_page == PAGE_LED) {
-        set_hidden(title_label, true);
-        set_hidden(center_panel, true);
-        set_hidden(footer_label, true);
-        set_hidden(ha_panel, true);
-        set_hidden(music_panel, true);
+    } else if(page == S1_PAGE_LED) {
         set_hidden(led_panel, false);
-        set_hidden(home_panel, true);
-        lv_obj_set_style_text_color(
-            subtitle_label,
-            lv_color_hex(LED_COLOR_BLUE),
-            0
-        );
-        lv_obj_set_style_text_font(
-            subtitle_label,
-            &lv_font_montserrat_14,
-            0
-        );
+        lv_obj_set_style_text_font(subtitle_label, &lv_font_montserrat_14, 0);
         update_led_rows();
-        return;
-    }
-
-    show_standard_content(true);
-    lv_obj_set_style_text_color(subtitle_label, lv_color_hex(0x707785), 0);
-    lv_obj_set_style_text_font(subtitle_label, &lv_font_montserrat_10, 0);
-    lv_label_set_text(title_label, pages[current_page].name);
-
-    lv_obj_set_style_text_align(center_text, LV_TEXT_ALIGN_CENTER, 0);
+    } else if(s1_ui_router_is_light_page(page)) s1_ui_light_show(page);
+    else s1_ui_placeholder_show(page);
 }
 
 
@@ -1471,77 +737,28 @@ static void update_page(void)
 
 void s1_ui_key(uint32_t key)
 {
-    if(
-        key == LV_KEY_ESC &&
-        current_page == PAGE_MUSIC &&
-        music_mode == MUSIC_MODE_CONTROLS
-    ) {
+    s1_page_id_t current_page = s1_ui_router_current();
+    if(key == LV_KEY_ESC && current_page == S1_PAGE_MUSIC &&
+       music_mode == MUSIC_MODE_CONTROLS) {
         set_music_mode(MUSIC_MODE_PAGE, true);
         return;
     }
-
     if(key == LV_KEY_HOME || key == LV_KEY_ESC) {
-        current_page = PAGE_HOME;
+        s1_ui_router_home();
         update_page();
         return;
     }
-
-    if(key == S1_KEY_MENU) {
-        if(current_page == PAGE_HA) {
-            toggle_ha_adjust_mode();
-        }
-        else {
-            lv_label_set_text(footer_label, "MENU");
-        }
+    if(s1_ui_router_is_horizontal_page(current_page)) {
+        bool moved = false;
+        if(key == LV_KEY_LEFT) moved = s1_ui_router_left();
+        else if(key == LV_KEY_RIGHT) moved = s1_ui_router_right();
+        else if(current_page == S1_PAGE_HOME && key == LV_KEY_UP) moved = s1_ui_router_up();
+        else if(current_page == S1_PAGE_HOME && key == LV_KEY_DOWN) moved = s1_ui_router_down();
+        else if(s1_ui_router_is_light_page(current_page)) s1_ui_light_key(key);
+        if(moved) update_page();
         return;
     }
-
-    if(key == S1_KEY_VOL_UP) {
-        if(current_page == PAGE_HA) {
-            adjust_ha_item(10);
-        }
-        else {
-            lv_label_set_text(footer_label, "VOL +");
-        }
-        return;
-    }
-
-    if(key == S1_KEY_VOL_DOWN) {
-        if(current_page == PAGE_HA) {
-            adjust_ha_item(-10);
-        }
-        else {
-            lv_label_set_text(footer_label, "VOL -");
-        }
-        return;
-    }
-
-    if(current_page == PAGE_HA) {
-        if(key == LV_KEY_UP) {
-            ha_selected =
-                (ha_selected + HA_ITEM_COUNT - 1)
-                % HA_ITEM_COUNT;
-            ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
-            update_ha_rows();
-            return;
-        }
-
-        if(key == LV_KEY_DOWN) {
-            ha_selected =
-                (ha_selected + 1)
-                % HA_ITEM_COUNT;
-            ha_adjust_mode = HA_ADJUST_BRIGHTNESS;
-            update_ha_rows();
-            return;
-        }
-
-        if(key == LV_KEY_ENTER) {
-            activate_ha_item();
-            return;
-        }
-    }
-
-    if(current_page == PAGE_MUSIC) {
+    if(current_page == S1_PAGE_MUSIC) {
         if(music_mode == MUSIC_MODE_CONTROLS) {
             if(key == LV_KEY_UP) {
                 set_music_mode(MUSIC_MODE_PAGE, true);
@@ -1572,7 +789,7 @@ void s1_ui_key(uint32_t key)
         }
     }
 
-    if(current_page == PAGE_LED) {
+    if(current_page == S1_PAGE_LED) {
         if(key == LV_KEY_UP) {
             led_selected =
                 (led_selected + LED_ITEM_COUNT - 1)
@@ -1597,21 +814,6 @@ void s1_ui_key(uint32_t key)
         }
     }
 
-    if(key == LV_KEY_RIGHT) {
-        current_page =
-            (current_page + 1)
-            % PAGE_COUNT;
-        update_page();
-        return;
-    }
-
-    if(key == LV_KEY_LEFT) {
-        current_page =
-            current_page == PAGE_HOME
-            ? PAGE_COUNT - 1
-            : current_page - 1;
-        update_page();
-    }
 }
 
 
@@ -1641,38 +843,14 @@ void s1_ui_init(void)
     lv_obj_set_style_text_font(subtitle_label, &lv_font_montserrat_10, 0);
     lv_obj_align(subtitle_label, LV_ALIGN_TOP_LEFT, 0, 2);
 
-    title_label = lv_label_create(root);
-    lv_obj_set_style_text_color(title_label, lv_color_hex(0xF4F6FA), 0);
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_22, 0);
-    lv_obj_align(title_label, LV_ALIGN_TOP_LEFT, 0, 20);
-
     page_label = lv_label_create(root);
     lv_obj_set_style_text_color(page_label, lv_color_hex(0x5F6672), 0);
     lv_obj_set_style_text_font(page_label, &lv_font_montserrat_10, 0);
     lv_obj_align(page_label, LV_ALIGN_TOP_RIGHT, 0, 5);
 
-    center_panel = lv_obj_create(root);
-    lv_obj_set_size(center_panel, 146, 180);
-    lv_obj_align(center_panel, LV_ALIGN_CENTER, 0, 10);
-    lv_obj_set_scrollable(center_panel, false);
-    lv_obj_set_style_radius(center_panel, 14, 0);
-    lv_obj_set_style_bg_color(center_panel, lv_color_hex(0x11151C), 0);
-    lv_obj_set_style_bg_opa(center_panel, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(center_panel, 1, 0);
-    lv_obj_set_style_border_color(center_panel, lv_color_hex(0x252A33), 0);
-
-    center_text = lv_label_create(center_panel);
-    lv_obj_set_width(center_text, 120);
-    lv_obj_set_style_text_color(center_text, lv_color_hex(0xE8EBF0), 0);
-    lv_obj_set_style_text_font(center_text, &lv_font_montserrat_14, 0);
-    lv_obj_center(center_text);
-
-    footer_label = lv_label_create(root);
-    lv_obj_set_width(footer_label, 145);
-    lv_obj_set_style_text_align(footer_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(footer_label, lv_color_hex(0x818998), 0);
-    lv_obj_set_style_text_font(footer_label, &lv_font_montserrat_10, 0);
-    lv_obj_align(footer_label, LV_ALIGN_BOTTOM_MID, 0, -2);
+    s1_ui_router_init();
+    s1_ui_placeholder_init(root);
+    s1_ui_light_init(root);
 
     home_panel = lv_obj_create(root);
     lv_obj_set_size(home_panel, 146, 278);
@@ -1790,31 +968,6 @@ void s1_ui_init(void)
         0
     );
     lv_obj_set_style_text_font(home_rain_label, &s1_home_info_font_14, 0);
-
-    ha_panel = lv_obj_create(root);
-    lv_obj_set_size(ha_panel, 146, 268);
-    lv_obj_align(ha_panel, LV_ALIGN_TOP_MID, 0, 28);
-    lv_obj_set_flex_flow(ha_panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_scroll_dir(ha_panel, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(ha_panel, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_style_radius(ha_panel, 10, 0);
-    lv_obj_set_style_bg_color(ha_panel, lv_color_hex(0x0E141C), 0);
-    lv_obj_set_style_bg_opa(ha_panel, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(ha_panel, 0, 0);
-    lv_obj_set_style_pad_all(ha_panel, 4, 0);
-    lv_obj_set_style_pad_row(ha_panel, 2, 0);
-
-    create_ha_category("LIGHTS");
-
-    for(int i = 0; i <= HA_ITEM_BATHROOM_LIGHT; i++) {
-        create_ha_row(&ha_items[i]);
-    }
-
-    create_ha_category("HOME DEVICES");
-
-    for(int i = HA_ITEM_AC; i < HA_ITEM_COUNT; i++) {
-        create_ha_row(&ha_items[i]);
-    }
 
     music_panel = lv_obj_create(root);
     lv_obj_set_size(music_panel, 146, 268);

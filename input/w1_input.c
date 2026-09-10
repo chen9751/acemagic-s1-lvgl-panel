@@ -279,7 +279,7 @@ static void handle_key(
 
         /* ---------- MENU ---------- */
 
-        case KEY_COMPOSE:
+        /* KEY_COMPOSE has no confirmed physical mapping in the hardware baseline. */
         case KEY_MENU:
 
             printf(

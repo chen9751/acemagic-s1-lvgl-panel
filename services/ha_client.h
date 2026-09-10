@@ -9,6 +9,8 @@ int ha_get_state(
     int state_buf_size
 );
 
+int ha_set_light_power(const char *entity_id, int on);
+
 int ha_toggle(
     const char *entity_id
 );

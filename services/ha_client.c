@@ -509,6 +509,14 @@ static int post_light_service(
  * Light controls
  * ========================================================= */
 
+int ha_set_light_power(const char *entity_id, int on)
+{
+    char body[512];
+    snprintf(body, sizeof(body), "{\"entity_id\":\"%s\"}", entity_id);
+    return post_light_service(on ? "turn_on" : "turn_off", body);
+}
+
+
 int ha_toggle(
     const char *entity_id
 )
