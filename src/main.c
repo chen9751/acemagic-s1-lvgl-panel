@@ -23,7 +23,14 @@
 #include "../services/ha_client.h"
 #include "../services/bluez_media_client.h"
 #include "../services/weather_client.h"
+
+/* Keep new standalone service/UI modules linked while the root CMake source
+ * list remains explicit. */
 #include "../services/bluez_media_client.c"
+#include "../services/weather_client.c"
+#include "../ui/pages/ui_home_overlay.c"
+#include "../ui/ui_theme.c"
+
 #include "lvgl/examples/lv_examples.h"
 #include "lvgl/demos/lv_demos.h"
 #include <SDL.h>
