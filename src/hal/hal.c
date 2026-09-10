@@ -106,3 +106,131 @@ lv_display_t * sdl_hal_init(int32_t w, int32_t h)
 
     return disp;
 }
+
+
+/* ============================================================
+ * ACEMAGIC S1 native LCD backend
+ * ============================================================ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+#define S1_LCD_WIDTH       170
+#define S1_LCD_HEIGHT      320
+#define S1_LCD_FRAME_BYTES (S1_LCD_WIDTH * S1_LCD_HEIGHT * 2)
+
+static FILE * s1_lcd_pipe = NULL;
+static uint8_t * s1_lcd_buffer = NULL;
+
+static void s1_lcd_flush_cb(
+    lv_display_t * disp,
+    const lv_area_t * area,
+    uint8_t * px_map)
+{
+    (void)area;
+
+    if(s1_lcd_pipe) {
+        size_t written = fwrite(
+            px_map,
+            1,
+            S1_LCD_FRAME_BYTES,
+            s1_lcd_pipe
+        );
+
+        if(written != S1_LCD_FRAME_BYTES) {
+            fprintf(
+                stderr,
+                "S1 LCD: short framebuffer write %zu/%d\n",
+                written,
+                S1_LCD_FRAME_BYTES
+            );
+        }
+
+        fflush(s1_lcd_pipe);
+    }
+
+    lv_display_flush_ready(disp);
+}
+
+lv_display_t * s1_hal_init(int32_t w, int32_t h)
+{
+    if(w != S1_LCD_WIDTH || h != S1_LCD_HEIGHT) {
+        fprintf(
+            stderr,
+            "S1 LCD: invalid resolution %dx%d\n",
+            (int)w,
+            (int)h
+        );
+        return NULL;
+    }
+
+    lv_group_set_default(
+        lv_group_create()
+    );
+
+    s1_lcd_pipe = popen(
+        "node drivers/s1_lcd_runner.js",
+        "w"
+    );
+
+    if(!s1_lcd_pipe) {
+        perror("S1 LCD: unable to start Node driver");
+        return NULL;
+    }
+
+    /*
+     * Full 170x320 RGB565 framebuffer.
+     */
+    s1_lcd_buffer = malloc(S1_LCD_FRAME_BYTES);
+
+    if(!s1_lcd_buffer) {
+        fprintf(stderr, "S1 LCD: framebuffer allocation failed\n");
+        pclose(s1_lcd_pipe);
+        s1_lcd_pipe = NULL;
+        return NULL;
+    }
+
+    lv_display_t * disp =
+        lv_display_create(w, h);
+
+    if(!disp) {
+        fprintf(stderr, "S1 LCD: lv_display_create failed\n");
+        free(s1_lcd_buffer);
+        s1_lcd_buffer = NULL;
+        pclose(s1_lcd_pipe);
+        s1_lcd_pipe = NULL;
+        return NULL;
+    }
+
+    /*
+     * S1 panel native format.
+     */
+    lv_display_set_color_format(
+        disp,
+        LV_COLOR_FORMAT_RGB565
+    );
+
+    lv_display_set_buffers(
+        disp,
+        s1_lcd_buffer,
+        NULL,
+        S1_LCD_FRAME_BYTES,
+        LV_DISPLAY_RENDER_MODE_FULL
+    );
+
+    lv_display_set_flush_cb(
+        disp,
+        s1_lcd_flush_cb
+    );
+
+    lv_display_set_default(disp);
+
+    printf(
+        "S1 LCD HAL initialized: %dx%d RGB565\n",
+        S1_LCD_WIDTH,
+        S1_LCD_HEIGHT
+    );
+
+    return disp;
+}

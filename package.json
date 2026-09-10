@@ -1,0 +1,28 @@
+{
+  "name": "s1-lvgl-ui",
+  "version": "1.0.0",
+  "description": "[LVGL](https://github.com/lvgl/lvgl) is written mainly for microcontrollers and embedded systems, however you can run the library **on your PC** as well without any embedded hardware. The code written on PC can be simply copied when your are using an embedded system.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chen9751/acemagic-s1-lvgl-panel.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/chen9751/acemagic-s1-lvgl-panel/issues"
+  },
+  "homepage": "https://github.com/chen9751/acemagic-s1-lvgl-panel#readme",
+  "dependencies": {
+    "node-hid": "^3.0.0",
+    "serialport": "^12.0.0"
+  }
+}

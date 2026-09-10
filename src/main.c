@@ -7,6 +7,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #ifdef _MSC_VER
 #include <Windows.h>
@@ -83,7 +84,21 @@ int main(int argc, char **argv)
 
     lv_init();
     lv_tick_set_cb(s1_tick_get);
-    sdl_hal_init(170, 320);
+
+    const char * display_backend = getenv("S1_DISPLAY");
+
+    if(display_backend && strcmp(display_backend, "s1") == 0) {
+        printf("Display backend: S1 LCD\n");
+
+        if(!s1_hal_init(170, 320)) {
+            fprintf(stderr, "S1 LCD HAL initialization failed\n");
+            return 1;
+        }
+    }
+    else {
+        printf("Display backend: SDL\n");
+        sdl_hal_init(170, 320);
+    }
 
     s1_ui_init();
     s1_ui_home_overlay_init();

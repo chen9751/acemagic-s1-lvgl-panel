@@ -33,6 +33,11 @@ extern "C" {
  */
 lv_display_t * sdl_hal_init(int32_t w, int32_t h);
 
+/**
+ * Initialize native ACEMAGIC S1 LCD output.
+ */
+lv_display_t * s1_hal_init(int32_t w, int32_t h);
+
 /**********************
  *      MACROS
  **********************/

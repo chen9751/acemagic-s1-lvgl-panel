@@ -13,3 +13,6 @@ bin/
 
 config/ha.conf
 ha.conf
+
+# Node dependencies
+node_modules/
