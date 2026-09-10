@@ -111,10 +111,10 @@ int main(void)
         visible("2700K"); assert(last_value == 2700 && strcmp(last_service, "temperature") == 0);
         for(int j = 0; j < 12; j++) s1_ui_key(LV_KEY_UP);
         visible("6500K"); assert(last_value == 6500);
+        before = calls;
         s1_ui_key(LV_KEY_RIGHT); s1_ui_key(LV_KEY_LEFT);
-        assert(s1_ui_router_current() == page); visible("6500K");
-        s1_ui_key(S1_KEY_MENU); visible("100%");
-        s1_ui_key(S1_KEY_MENU);
+        assert(s1_ui_router_current() == page); visible("亮度"); visible("100%"); assert(calls == before);
+        s1_ui_key(S1_KEY_MENU); visible("色温"); visible("6500K");
         fail_service = 1; s1_ui_key(LV_KEY_ENTER); visible("6500K");
         fail_service = 0; s1_ui_key(LV_KEY_ENTER); visible("OFF");
         assert(strcmp(last_service, "power") == 0 && last_value == 0);
