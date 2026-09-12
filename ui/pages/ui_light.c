@@ -2,6 +2,7 @@
 #include "ui_page.h"
 #include "../../services/ha_client.h"
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 LV_FONT_DECLARE(s1_ui_font_14);
@@ -47,6 +48,7 @@ static lv_obj_t *bulb_glass;
 static lv_obj_t *bulb_neck;
 static lv_obj_t *bulb_base;
 static lv_timer_t *refresh_timer;
+static char last_time_text[8];
 
 #define COLOR_TEXT          0xF5F6F7
 #define COLOR_MUTED         0x73777D
@@ -61,6 +63,7 @@ static lv_timer_t *refresh_timer;
 
 static void set_hidden(lv_obj_t *obj, bool hidden)
 {
+    if(obj == NULL || lv_obj_is_hidden(obj) == hidden) return;
     lv_obj_set_hidden(obj, hidden);
 }
 
@@ -91,8 +94,12 @@ static void update_time(void)
     time_t now = time(NULL);
     struct tm *local = localtime(&now);
     if(local == NULL || global_time_label == NULL) return;
+
     char text[8];
     snprintf(text, sizeof(text), "%02d:%02d", local->tm_hour, local->tm_min);
+    if(strcmp(text, last_time_text) == 0) return;
+
+    snprintf(last_time_text, sizeof(last_time_text), "%s", text);
     lv_label_set_text(global_time_label, text);
 }
 
@@ -103,9 +110,6 @@ static void set_bulb_on(bool on)
     lv_obj_set_style_border_color(bulb_glass, lv_color_hex(color), 0);
     lv_obj_set_style_bg_color(bulb_neck, lv_color_hex(color), 0);
     lv_obj_set_style_bg_color(bulb_base, lv_color_hex(color), 0);
-    lv_obj_set_style_shadow_color(bulb_glass, lv_color_hex(COLOR_WARM), 0);
-    lv_obj_set_style_shadow_width(bulb_glass, on ? 14 : 0, 0);
-    lv_obj_set_style_shadow_opa(bulb_glass, on ? LV_OPA_40 : LV_OPA_TRANSP, 0);
 }
 
 static void render(void)
@@ -150,6 +154,13 @@ static void render(void)
     }
 }
 
+static bool light_visual_state_changed(const light_t *before, const light_t *after)
+{
+    return before->mode != after->mode ||
+        before->brightness != after->brightness ||
+        before->temperature != after->temperature;
+}
+
 static int sync_from_ha(bool force_brightness)
 {
     light_t *light = &lights[selected];
@@ -191,12 +202,14 @@ static void refresh_timer_cb(lv_timer_t *timer)
     update_time();
     if(panel == NULL || lv_obj_is_hidden(panel)) return;
 
+    light_t before = lights[selected];
+
     if(sync_from_ha(false) == 0) {
-        lv_obj_set_hidden(error_label, true);
-        render();
+        set_hidden(error_label, true);
+        if(light_visual_state_changed(&before, &lights[selected])) render();
     } else {
         lv_label_set_text(error_label, "Sync failed");
-        lv_obj_set_hidden(error_label, false);
+        set_hidden(error_label, false);
     }
 }
 
@@ -258,9 +271,6 @@ void s1_ui_light_init(lv_obj_t *parent)
     lv_obj_set_style_pad_all(status_chip, 0, 0);
     lv_obj_set_style_bg_color(status_chip, lv_color_hex(COLOR_WARM), 0);
     lv_obj_set_style_bg_opa(status_chip, LV_OPA_COVER, 0);
-    lv_obj_set_style_shadow_color(status_chip, lv_color_hex(COLOR_WARM), 0);
-    lv_obj_set_style_shadow_width(status_chip, 12, 0);
-    lv_obj_set_style_shadow_opa(status_chip, LV_OPA_30, 0);
 
     status_label = lv_label_create(status_chip);
     lv_label_set_text(status_label, "ON");
@@ -297,9 +307,6 @@ void s1_ui_light_init(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(bar, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(bar, lv_color_hex(COLOR_TRACK_BORDER), LV_PART_MAIN);
-    lv_obj_set_style_shadow_color(bar, lv_color_hex(COLOR_WARM), 0);
-    lv_obj_set_style_shadow_width(bar, 12, 0);
-    lv_obj_set_style_shadow_opa(bar, LV_OPA_20, 0);
 
     info_caption = lv_label_create(panel);
     lv_label_set_text(info_caption, "亮度");
@@ -339,22 +346,22 @@ void s1_ui_light_show(s1_page_id_t page)
 {
     if(!s1_ui_router_is_light_page(page)) return;
     selected = page - S1_PAGE_LIGHT_LIVING;
-    lv_obj_set_hidden(panel, false);
+    set_hidden(panel, false);
     update_time();
 
     if(sync_from_ha(true) == 0) {
-        lv_obj_set_hidden(error_label, true);
+        set_hidden(error_label, true);
     } else {
         if(lights[selected].mode != LIGHT_OFF) lights[selected].mode = LIGHT_BRIGHTNESS;
         lv_label_set_text(error_label, "Sync failed");
-        lv_obj_set_hidden(error_label, false);
+        set_hidden(error_label, false);
     }
     render();
 }
 
 void s1_ui_light_hide(void)
 {
-    lv_obj_set_hidden(panel, true);
+    set_hidden(panel, true);
 }
 
 void s1_ui_light_key(uint32_t key)
@@ -362,7 +369,7 @@ void s1_ui_light_key(uint32_t key)
     light_t *light = &lights[selected];
 
     /* Every remote action arriving on a light page first refreshes the real HA state. */
-    if(sync_from_ha(false) == 0) lv_obj_set_hidden(error_label, true);
+    if(sync_from_ha(false) == 0) set_hidden(error_label, true);
 
     int result = 0;
     bool controlled = false;
@@ -390,7 +397,6 @@ void s1_ui_light_key(uint32_t key)
         if(next < minimum) next = minimum;
         if(next > 100) next = 100;
         if(next == *value) {
-            render();
             return;
         }
         result = temperature
@@ -398,21 +404,20 @@ void s1_ui_light_key(uint32_t key)
             : ha_set_light_brightness(light->entity, next);
         if(result == 0) *value = next;
     } else {
-        render();
         return;
     }
 
     if(controlled && result == 0) {
         /* Command succeeded: keep the optimistic value if the immediate GET fails. */
         if(sync_from_ha(false) == 0) {
-            lv_obj_set_hidden(error_label, true);
+            set_hidden(error_label, true);
         } else {
             lv_label_set_text(error_label, "Sync failed");
-            lv_obj_set_hidden(error_label, false);
+            set_hidden(error_label, false);
         }
     } else if(result != 0) {
         lv_label_set_text(error_label, "Command failed");
-        lv_obj_set_hidden(error_label, false);
+        set_hidden(error_label, false);
     }
 
     render();
