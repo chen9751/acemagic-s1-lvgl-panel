@@ -19,7 +19,6 @@
 #define MUSIC_COLOR_BLUE      0x18B9D9
 #define MUSIC_COLOR_BUTTON    0x121A25
 #define MUSIC_COLOR_SELECTED  0x0D7088
-#define MUSIC_SCROLL_DURATION_MS 18000U
 #define MUSIC_ENTRY_GUARD_MS      450U
 
 #define LED_COLOR_BLUE      0x18B9D9
@@ -570,13 +569,12 @@ static lv_obj_t *create_music_info_label(
     lv_obj_t *label = lv_label_create(parent);
 
     lv_label_set_text(label, text);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_size(label, 104, lv_font_get_line_height(font));
     lv_obj_set_pos(label, 0, y);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     lv_obj_set_style_text_font(label, font, 0);
-    lv_obj_set_style_anim_duration(label, MUSIC_SCROLL_DURATION_MS, 0);
 
     return label;
 }
