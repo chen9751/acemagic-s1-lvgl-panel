@@ -21,7 +21,10 @@ const MAX_REFRESH_WIDTH = 255;
 const MAX_REFRESH_HEIGHT = 255;
 const DIRTY_COALESCE_MS = 4;
 const ERROR_BACKOFF_MS = 250;
-const HEARTBEAT_INTERVAL_MS = 5000;
+/* Match the proven upstream scheduler: after ~1.6 s without any LCD traffic,
+ * send set_time (0xA1/0xF2) as the panel heartbeat. */
+const HEARTBEAT_IDLE_MS = 1600;
+const HEARTBEAT_POLL_MS = 200;
 const STATS_INTERVAL_MS = 5000;
 
 let handle = null;
@@ -32,6 +35,7 @@ let drawTimer = null;
 let retryNotBefore = 0;
 let initialRedrawDone = false;
 let recoveryRequired = false;
+let lastPanelActivityMs = Date.now();
 
 /* Latest logical 170x320 RGB565 image reconstructed from LVGL flushes. */
 const logicalPixels = new Uint16Array(PIXELS);
@@ -54,10 +58,15 @@ let statsRects = 0;
 let statsChunks = 0;
 let statsErrors = 0;
 let statsRecoveryBatches = 0;
+let statsHeartbeats = 0;
 let statsHeartbeatErrors = 0;
 let statsLastTransferMs = 0;
 let statsMaxTransferMs = 0;
 let statsDirtyAreas = new Map();
+
+function markPanelActivity() {
+    lastPanelActivityMs = Date.now();
+}
 
 function readU16LE(buffer, offset) {
     return buffer[offset] | (buffer[offset + 1] << 8);
@@ -151,9 +160,7 @@ function chooseChunkShape(width, height) {
             Math.floor(MAX_REFRESH_PIXELS / chunkWidth)
         );
 
-        if (chunkHeight < 1) {
-            continue;
-        }
+        if (chunkHeight < 1) continue;
 
         const cols = Math.ceil(width / chunkWidth);
         const rows = Math.ceil(height / chunkHeight);
@@ -164,20 +171,11 @@ function chooseChunkShape(width, height) {
             count < best.count ||
             (count === best.count && area > best.area) ||
             (count === best.count && area === best.area && cols < best.cols)) {
-            best = {
-                width: chunkWidth,
-                height: chunkHeight,
-                count,
-                area,
-                cols
-            };
+            best = { width: chunkWidth, height: chunkHeight, count, area, cols };
         }
     }
 
-    if (!best) {
-        throw new Error(`cannot split LCD refresh area ${width}x${height}`);
-    }
-
+    if (!best) throw new Error(`cannot split LCD refresh area ${width}x${height}`);
     return best;
 }
 
@@ -194,10 +192,7 @@ function addDirtyRect(rect) {
 
         for (let i = 0; i < dirtyRects.length; i++) {
             const current = dirtyRects[i];
-
-            if (!rectsTouchOrOverlap(current, incoming)) {
-                continue;
-            }
+            if (!rectsTouchOrOverlap(current, incoming)) continue;
 
             const combined = mergeRect(current, incoming);
             const separateCost =
@@ -213,9 +208,7 @@ function addDirtyRect(rect) {
             }
         }
 
-        if (!merged) {
-            break;
-        }
+        if (!merged) break;
     }
 
     dirtyRects.push(incoming);
@@ -223,18 +216,13 @@ function addDirtyRect(rect) {
 
 function applyLogicalRegion(rect, payload) {
     const expectedBytes = rect.width * rect.height * 2;
-
     if (payload.length !== expectedBytes) {
-        throw new Error(
-            `invalid S1 update payload ${payload.length}/${expectedBytes}`
-        );
+        throw new Error(`invalid S1 update payload ${payload.length}/${expectedBytes}`);
     }
 
     let srcOffset = 0;
-
     for (let row = 0; row < rect.height; row++) {
         const dstRow = (rect.y + row) * WIDTH + rect.x;
-
         for (let col = 0; col < rect.width; col++) {
             logicalPixels[dstRow + col] = payload.readUInt16LE(srcOffset);
             srcOffset += 2;
@@ -246,13 +234,10 @@ function applyLogicalRegion(rect, payload) {
 
 function parsePipeMessages() {
     for (;;) {
-        if (rx.length < PIPE_HEADER_SIZE) {
-            return;
-        }
+        if (rx.length < PIPE_HEADER_SIZE) return;
 
         if (!rx.subarray(0, 4).equals(PIPE_MAGIC)) {
             const nextMagic = rx.indexOf(PIPE_MAGIC, 1);
-
             if (nextMagic < 0) {
                 rx = rx.subarray(Math.max(0, rx.length - 3));
                 return;
@@ -260,10 +245,7 @@ function parsePipeMessages() {
 
             console.error(`S1 LCD: resyncing pipe stream, skipped ${nextMagic} bytes`);
             rx = rx.subarray(nextMagic);
-
-            if (rx.length < PIPE_HEADER_SIZE) {
-                return;
-            }
+            if (rx.length < PIPE_HEADER_SIZE) return;
         }
 
         const version = rx[4];
@@ -279,32 +261,21 @@ function parsePipeMessages() {
         if (version !== PIPE_VERSION) {
             throw new Error(`unsupported S1 pipe protocol version ${version}`);
         }
-
         if (type !== PIPE_PARTIAL && type !== PIPE_FULL) {
             throw new Error(`unsupported S1 pipe update type ${type}`);
         }
-
         if (rect.width === 0 || rect.height === 0 ||
-            rect.x + rect.width > WIDTH ||
-            rect.y + rect.height > HEIGHT) {
-            throw new Error(
-                `invalid S1 update rect ${rect.x},${rect.y} ${rect.width}x${rect.height}`
-            );
+            rect.x + rect.width > WIDTH || rect.y + rect.height > HEIGHT) {
+            throw new Error(`invalid S1 update rect ${rect.x},${rect.y} ${rect.width}x${rect.height}`);
         }
 
         const expectedBytes = rect.width * rect.height * 2;
-
         if (payloadBytes !== expectedBytes || payloadBytes > PIXELS * 2) {
-            throw new Error(
-                `invalid S1 update size ${payloadBytes}, expected ${expectedBytes}`
-            );
+            throw new Error(`invalid S1 update size ${payloadBytes}, expected ${expectedBytes}`);
         }
 
         const totalBytes = PIPE_HEADER_SIZE + payloadBytes;
-
-        if (rx.length < totalBytes) {
-            return;
-        }
+        if (rx.length < totalBytes) return;
 
         const payload = rx.subarray(PIPE_HEADER_SIZE, totalBytes);
         applyLogicalRegion(rect, payload);
@@ -313,8 +284,7 @@ function parsePipeMessages() {
         statsMessages++;
         recordDirtyArea(rect);
 
-        if (!initialRedrawDone &&
-            (type === PIPE_FULL || isFullLogicalRect(rect))) {
+        if (!initialRedrawDone && (type === PIPE_FULL || isFullLogicalRect(rect))) {
             initialFullSeen = true;
         }
 
@@ -349,14 +319,11 @@ function logicalRectToHardware(rect) {
     };
 
     const data = new Uint16Array(hwRect.width * hwRect.height);
-
     for (let dy = 0; dy < hwRect.height; dy++) {
         const localX = rect.width - 1 - dy;
-
         for (let dx = 0; dx < hwRect.width; dx++) {
             const localY = dx;
-            const srcIndex =
-                (rect.y + localY) * WIDTH + (rect.x + localX);
+            const srcIndex = (rect.y + localY) * WIDTH + (rect.x + localX);
             data[dy * hwRect.width + dx] = logicalPixels[srcIndex];
         }
     }
@@ -370,7 +337,6 @@ function splitHardwareRegion(hwRegion) {
 
     for (let y = 0; y < hwRegion.rect.height; y += shape.height) {
         const height = Math.min(shape.height, hwRegion.rect.height - y);
-
         for (let x = 0; x < hwRegion.rect.width; x += shape.width) {
             const width = Math.min(shape.width, hwRegion.rect.width - x);
             const data = new Uint16Array(width * height);
@@ -378,10 +344,7 @@ function splitHardwareRegion(hwRegion) {
 
             for (let row = 0; row < height; row++) {
                 const srcStart = (y + row) * hwRegion.rect.width + x;
-                data.set(
-                    hwRegion.data.subarray(srcStart, srcStart + width),
-                    dst
-                );
+                data.set(hwRegion.data.subarray(srcStart, srcStart + width), dst);
                 dst += width;
             }
 
@@ -399,15 +362,9 @@ function splitHardwareRegion(hwRegion) {
 }
 
 function scheduleDraw() {
-    if (drawing || hidBusy || drawTimer || dirtyRects.length === 0 || !handle) {
-        return;
-    }
+    if (drawing || hidBusy || drawTimer || dirtyRects.length === 0 || !handle) return;
 
-    const delay = Math.max(
-        DIRTY_COALESCE_MS,
-        retryNotBefore - Date.now()
-    );
-
+    const delay = Math.max(DIRTY_COALESCE_MS, retryNotBefore - Date.now());
     drawTimer = setTimeout(() => {
         drawTimer = null;
         void pumpDraw();
@@ -420,7 +377,6 @@ async function sendPartial(rect, allowSupersede) {
 
     for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
-
         await lcd.refresh(
             handle,
             chunk.x,
@@ -429,16 +385,11 @@ async function sendPartial(rect, allowSupersede) {
             chunk.height,
             { data: chunk.data }
         );
+        markPanelActivity();
         statsChunks++;
 
-        /*
-         * Normal animation traffic is latest-frame-wins, but recovery after
-         * a HID error must finish the complete dirty rectangle so the panel
-         * cannot remain stuck with a half-updated old/new frame mixture.
-         */
-        if (allowSupersede &&
-            i + 1 < chunks.length &&
-            pendingSupersedes(rect)) {
+        /* Normal traffic is latest-frame-wins. Recovery batches must finish. */
+        if (allowSupersede && i + 1 < chunks.length && pendingSupersedes(rect)) {
             statsSuperseded++;
             return { chunks: i + 1, superseded: true };
         }
@@ -448,9 +399,7 @@ async function sendPartial(rect, allowSupersede) {
 }
 
 async function pumpDraw() {
-    if (drawing || hidBusy || dirtyRects.length === 0 || !handle || !logicalHasData) {
-        return;
-    }
+    if (drawing || hidBusy || dirtyRects.length === 0 || !handle || !logicalHasData) return;
 
     drawing = true;
     hidBusy = true;
@@ -459,48 +408,30 @@ async function pumpDraw() {
     const recoveryBatch = recoveryRequired;
 
     try {
-        /*
-         * REDRAW is deliberately kept out of the normal interaction path.
-         * It is used once for the initial complete framebuffer only.
-         */
         if (!initialRedrawDone && initialFullSeen) {
             await lcd.redraw(handle, fullHardwareImage());
+            markPanelActivity();
             initialRedrawDone = true;
             initialFullSeen = false;
             dirtyRects = [];
             statsInitialFull++;
             transferred = true;
         } else {
-            /*
-             * Snapshot current dirty rectangles. New LVGL updates arriving
-             * while HID is busy stay queued and will be rendered afterwards
-             * from the newest logical framebuffer.
-             */
             const batch = dirtyRects;
             dirtyRects = [];
+            batch.sort((a, b) => (a.width * a.height) - (b.width * b.height));
 
-            /* Smaller regions first make button/focus feedback visible ASAP. */
-            batch.sort((a, b) =>
-                (a.width * a.height) - (b.width * b.height)
-            );
-
-            if (recoveryBatch) {
-                statsRecoveryBatches++;
-            }
+            if (recoveryBatch) statsRecoveryBatches++;
 
             for (let i = 0; i < batch.length; i++) {
                 const rect = batch[i];
-
                 try {
                     const result = await sendPartial(rect, !recoveryBatch);
                     statsRects++;
                     transferred = result.chunks > 0 || transferred;
                 } catch (err) {
-                    /* Requeue this and all unprocessed regions using latest data. */
                     addDirtyRect(rect);
-                    for (let j = i + 1; j < batch.length; j++) {
-                        addDirtyRect(batch[j]);
-                    }
+                    for (let j = i + 1; j < batch.length; j++) addDirtyRect(batch[j]);
                     throw err;
                 }
             }
@@ -509,9 +440,7 @@ async function pumpDraw() {
         }
 
         retryNotBefore = 0;
-        if (recoveryBatch) {
-            recoveryRequired = false;
-        }
+        if (recoveryBatch) recoveryRequired = false;
     } catch (err) {
         statsErrors++;
         recoveryRequired = true;
@@ -520,9 +449,7 @@ async function pumpDraw() {
     } finally {
         if (transferred) {
             statsLastTransferMs = Date.now() - startedAt;
-            if (statsLastTransferMs > statsMaxTransferMs) {
-                statsMaxTransferMs = statsLastTransferMs;
-            }
+            if (statsLastTransferMs > statsMaxTransferMs) statsMaxTransferMs = statsLastTransferMs;
         }
 
         hidBusy = false;
@@ -531,35 +458,48 @@ async function pumpDraw() {
     }
 }
 
+async function maybeHeartbeat() {
+    if (!handle || drawing || hidBusy || drawTimer || dirtyRects.length !== 0) return;
+    if (Date.now() - lastPanelActivityMs < HEARTBEAT_IDLE_MS) return;
+
+    hidBusy = true;
+    try {
+        await lcd.heartbeat(handle);
+        markPanelActivity();
+        statsHeartbeats++;
+    } catch (err) {
+        statsHeartbeatErrors++;
+        console.error('LCD heartbeat error:', err);
+    } finally {
+        hidBusy = false;
+        scheduleDraw();
+    }
+}
+
 async function main() {
     const device = node_hid.devices().find(d =>
-        d.vendorId === 0x04d9 &&
-        d.productId === 0xfd01 &&
-        d.interface === 1
+        d.vendorId === 0x04d9 && d.productId === 0xfd01 && d.interface === 1
     );
 
-    if (!device) {
-        throw new Error('S1 LCD 04d9:fd01 interface 1 not found');
-    }
+    if (!device) throw new Error('S1 LCD 04d9:fd01 interface 1 not found');
 
     console.error(`S1 LCD found: ${device.path}, interface ${device.interface}`);
-
     handle = await node_hid.HIDAsync.open(device.path);
 
     console.error(
-        'S1 LCD opened; serialized HID, recovery-safe partial refresh enabled'
+        'S1 LCD opened; serialized HID, 1.6s activity-based heartbeat enabled'
     );
 
     hidBusy = true;
     try {
         await lcd.set_orientation(handle, true);
+        markPanelActivity();
     } finally {
         hidBusy = false;
     }
 
     process.stdin.on('data', chunk => {
         rx = Buffer.concat([rx, chunk]);
-
         try {
             parsePipeMessages();
         } catch (err) {
@@ -570,19 +510,9 @@ async function main() {
 
     process.stdin.resume();
 
-    setInterval(async () => {
-        if (!drawing && !hidBusy && !drawTimer && dirtyRects.length === 0 && handle) {
-            hidBusy = true;
-            try {
-                await lcd.heartbeat(handle);
-            } catch (_) {
-                statsHeartbeatErrors++;
-            } finally {
-                hidBusy = false;
-                scheduleDraw();
-            }
-        }
-    }, HEARTBEAT_INTERVAL_MS);
+    setInterval(() => {
+        void maybeHeartbeat();
+    }, HEARTBEAT_POLL_MS);
 
     setInterval(() => {
         console.error(
@@ -590,7 +520,9 @@ async function main() {
             `superseded=${statsSuperseded} initialFull=${statsInitialFull} ` +
             `batches=${statsPartialBatches} rects=${statsRects} ` +
             `chunks=${statsChunks} errors=${statsErrors} ` +
-            `recovery=${statsRecoveryBatches} heartbeatErrors=${statsHeartbeatErrors} ` +
+            `recovery=${statsRecoveryBatches} heartbeats=${statsHeartbeats} ` +
+            `heartbeatErrors=${statsHeartbeatErrors} ` +
+            `idleAge=${Date.now() - lastPanelActivityMs}ms ` +
             `transfer=${statsLastTransferMs}ms max=${statsMaxTransferMs}ms ` +
             `pending=${dirtyRects.length} hot=${hottestDirtyArea()}`
         );
@@ -604,6 +536,7 @@ async function main() {
         statsChunks = 0;
         statsErrors = 0;
         statsRecoveryBatches = 0;
+        statsHeartbeats = 0;
         statsHeartbeatErrors = 0;
         statsMaxTransferMs = statsLastTransferMs;
         statsDirtyAreas = new Map();
