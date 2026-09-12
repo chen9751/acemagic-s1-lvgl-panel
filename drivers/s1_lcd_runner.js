@@ -27,9 +27,11 @@ const STATS_INTERVAL_MS = 5000;
 let handle = null;
 let rx = Buffer.alloc(0);
 let drawing = false;
+let hidBusy = false;
 let drawTimer = null;
 let retryNotBefore = 0;
 let initialRedrawDone = false;
+let recoveryRequired = false;
 
 /* Latest logical 170x320 RGB565 image reconstructed from LVGL flushes. */
 const logicalPixels = new Uint16Array(PIXELS);
@@ -51,8 +53,11 @@ let statsPartialBatches = 0;
 let statsRects = 0;
 let statsChunks = 0;
 let statsErrors = 0;
+let statsRecoveryBatches = 0;
+let statsHeartbeatErrors = 0;
 let statsLastTransferMs = 0;
 let statsMaxTransferMs = 0;
+let statsDirtyAreas = new Map();
 
 function readU16LE(buffer, offset) {
     return buffer[offset] | (buffer[offset + 1] << 8);
@@ -114,6 +119,25 @@ function isFullLogicalRect(rect) {
         rect.y === 0 &&
         rect.width === WIDTH &&
         rect.height === HEIGHT;
+}
+
+function recordDirtyArea(rect) {
+    const key = `${rect.x},${rect.y} ${rect.width}x${rect.height}`;
+    statsDirtyAreas.set(key, (statsDirtyAreas.get(key) || 0) + 1);
+}
+
+function hottestDirtyArea() {
+    let bestKey = '-';
+    let bestCount = 0;
+
+    for (const [key, count] of statsDirtyAreas) {
+        if (count > bestCount) {
+            bestKey = key;
+            bestCount = count;
+        }
+    }
+
+    return bestCount > 0 ? `${bestKey}#${bestCount}` : '-';
 }
 
 function chooseChunkShape(width, height) {
@@ -287,6 +311,7 @@ function parsePipeMessages() {
         rx = rx.subarray(totalBytes);
 
         statsMessages++;
+        recordDirtyArea(rect);
 
         if (!initialRedrawDone &&
             (type === PIPE_FULL || isFullLogicalRect(rect))) {
@@ -374,7 +399,7 @@ function splitHardwareRegion(hwRegion) {
 }
 
 function scheduleDraw() {
-    if (drawing || drawTimer || dirtyRects.length === 0 || !handle) {
+    if (drawing || hidBusy || drawTimer || dirtyRects.length === 0 || !handle) {
         return;
     }
 
@@ -389,7 +414,7 @@ function scheduleDraw() {
     }, Math.max(0, delay));
 }
 
-async function sendPartial(rect) {
+async function sendPartial(rect, allowSupersede) {
     const hwRegion = logicalRectToHardware(rect);
     const chunks = splitHardwareRegion(hwRegion);
 
@@ -407,15 +432,13 @@ async function sendPartial(rect) {
         statsChunks++;
 
         /*
-         * Continuous LVGL animations (for example a long scrolling song
-         * title) can invalidate the same large area again while an older
-         * version is still being transferred. If the pending newest dirty
-         * rectangle fully covers this one, the unsent chunks are already
-         * stale. Stop this transfer and let the newest framebuffer replace it.
-         * This is safe because the next pending update covers every pixel of
-         * the abandoned logical rectangle.
+         * Normal animation traffic is latest-frame-wins, but recovery after
+         * a HID error must finish the complete dirty rectangle so the panel
+         * cannot remain stuck with a half-updated old/new frame mixture.
          */
-        if (i + 1 < chunks.length && pendingSupersedes(rect)) {
+        if (allowSupersede &&
+            i + 1 < chunks.length &&
+            pendingSupersedes(rect)) {
             statsSuperseded++;
             return { chunks: i + 1, superseded: true };
         }
@@ -425,13 +448,15 @@ async function sendPartial(rect) {
 }
 
 async function pumpDraw() {
-    if (drawing || dirtyRects.length === 0 || !handle || !logicalHasData) {
+    if (drawing || hidBusy || dirtyRects.length === 0 || !handle || !logicalHasData) {
         return;
     }
 
     drawing = true;
+    hidBusy = true;
     const startedAt = Date.now();
     let transferred = false;
+    const recoveryBatch = recoveryRequired;
 
     try {
         /*
@@ -459,11 +484,15 @@ async function pumpDraw() {
                 (a.width * a.height) - (b.width * b.height)
             );
 
+            if (recoveryBatch) {
+                statsRecoveryBatches++;
+            }
+
             for (let i = 0; i < batch.length; i++) {
                 const rect = batch[i];
 
                 try {
-                    const result = await sendPartial(rect);
+                    const result = await sendPartial(rect, !recoveryBatch);
                     statsRects++;
                     transferred = result.chunks > 0 || transferred;
                 } catch (err) {
@@ -480,8 +509,12 @@ async function pumpDraw() {
         }
 
         retryNotBefore = 0;
+        if (recoveryBatch) {
+            recoveryRequired = false;
+        }
     } catch (err) {
         statsErrors++;
+        recoveryRequired = true;
         retryNotBefore = Date.now() + ERROR_BACKOFF_MS;
         console.error('LCD refresh scheduler error:', err);
     } finally {
@@ -492,6 +525,7 @@ async function pumpDraw() {
             }
         }
 
+        hidBusy = false;
         drawing = false;
         scheduleDraw();
     }
@@ -513,10 +547,15 @@ async function main() {
     handle = await node_hid.HIDAsync.open(device.path);
 
     console.error(
-        'S1 LCD opened; REDRAW initial sync only, normal UI uses preemptive LCD_REFRESH'
+        'S1 LCD opened; serialized HID, recovery-safe partial refresh enabled'
     );
 
-    await lcd.set_orientation(handle, true);
+    hidBusy = true;
+    try {
+        await lcd.set_orientation(handle, true);
+    } finally {
+        hidBusy = false;
+    }
 
     process.stdin.on('data', chunk => {
         rx = Buffer.concat([rx, chunk]);
@@ -532,11 +571,15 @@ async function main() {
     process.stdin.resume();
 
     setInterval(async () => {
-        if (!drawing && !drawTimer && dirtyRects.length === 0 && handle) {
+        if (!drawing && !hidBusy && !drawTimer && dirtyRects.length === 0 && handle) {
+            hidBusy = true;
             try {
                 await lcd.heartbeat(handle);
             } catch (_) {
-                /* Heartbeat failures are intentionally non-fatal. */
+                statsHeartbeatErrors++;
+            } finally {
+                hidBusy = false;
+                scheduleDraw();
             }
         }
     }, HEARTBEAT_INTERVAL_MS);
@@ -547,8 +590,9 @@ async function main() {
             `superseded=${statsSuperseded} initialFull=${statsInitialFull} ` +
             `batches=${statsPartialBatches} rects=${statsRects} ` +
             `chunks=${statsChunks} errors=${statsErrors} ` +
+            `recovery=${statsRecoveryBatches} heartbeatErrors=${statsHeartbeatErrors} ` +
             `transfer=${statsLastTransferMs}ms max=${statsMaxTransferMs}ms ` +
-            `pending=${dirtyRects.length}`
+            `pending=${dirtyRects.length} hot=${hottestDirtyArea()}`
         );
 
         statsMessages = 0;
@@ -559,7 +603,10 @@ async function main() {
         statsRects = 0;
         statsChunks = 0;
         statsErrors = 0;
+        statsRecoveryBatches = 0;
+        statsHeartbeatErrors = 0;
         statsMaxTransferMs = statsLastTransferMs;
+        statsDirtyAreas = new Map();
     }, STATS_INTERVAL_MS);
 }
 
