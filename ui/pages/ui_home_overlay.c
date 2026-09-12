@@ -3,6 +3,7 @@
 #include "lvgl/lvgl.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #define HOME_BG_TOP       0x070A10
@@ -28,6 +29,22 @@ static const char *weekday_names[] = {
     "星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"
 };
 
+static void set_hidden_if_changed(lv_obj_t *obj, bool hidden)
+{
+    if(obj == NULL || lv_obj_is_hidden(obj) == hidden) return;
+    lv_obj_set_hidden(obj, hidden);
+}
+
+static void set_label_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if(label == NULL || text == NULL) return;
+
+    const char *current = lv_label_get_text(label);
+    if(current != NULL && strcmp(current, text) == 0) return;
+
+    lv_label_set_text(label, text);
+}
+
 static void update_clock_text(void)
 {
     if(overlay == NULL) return;
@@ -49,10 +66,10 @@ static void update_clock_text(void)
     snprintf(minute, sizeof(minute), "%02d", local->tm_min);
     snprintf(date, sizeof(date), "%s  %d月%d日", weekday_names[local->tm_wday], local->tm_mon + 1, local->tm_mday);
 
-    lv_label_set_text(small_time_label, small_time);
-    lv_label_set_text(hour_label, hour);
-    lv_label_set_text(minute_label, minute);
-    lv_label_set_text(date_label, date);
+    set_label_text_if_changed(small_time_label, small_time);
+    set_label_text_if_changed(hour_label, hour);
+    set_label_text_if_changed(minute_label, minute);
+    set_label_text_if_changed(date_label, date);
 }
 
 static void refresh_home_overlay(lv_timer_t *timer)
@@ -60,16 +77,15 @@ static void refresh_home_overlay(lv_timer_t *timer)
     (void)timer;
     if(overlay == NULL) return;
 
-    /* The dispatcher now changes visibility synchronously. This is only a
-     * lightweight safety sync plus clock refresh, so page changes no longer
-     * wait half a second for the old Home page to disappear/reappear. */
-    if(s1_ui_router_current() == S1_PAGE_HOME) {
-        lv_obj_set_hidden(overlay, false);
-        update_clock_text();
-    }
-    else {
-        lv_obj_set_hidden(overlay, true);
-    }
+    const bool on_home = s1_ui_router_current() == S1_PAGE_HOME;
+
+    /*
+     * Keep the 50 ms visibility safety sync so page transitions stay
+     * responsive, but do not invalidate LVGL when visibility/text is already
+     * correct. The previous code rewrote four labels 20 times per second.
+     */
+    set_hidden_if_changed(overlay, !on_home);
+    if(on_home) update_clock_text();
 }
 
 void s1_ui_home_overlay_set_weather(int temperature_c, int rain_probability_percent, int weather_code)
@@ -87,22 +103,22 @@ void s1_ui_home_overlay_set_weather(int temperature_c, int rain_probability_perc
 
     /* A drop is used as the neutral weather glyph. The previous code mapped
      * clear weather to LV_SYMBOL_OK, which looked like a status check mark. */
-    lv_label_set_text(weather_icon_label, LV_SYMBOL_TINT);
-    lv_label_set_text(temperature_label, temperature);
-    lv_label_set_text(rain_label, rain);
+    set_label_text_if_changed(weather_icon_label, LV_SYMBOL_TINT);
+    set_label_text_if_changed(temperature_label, temperature);
+    set_label_text_if_changed(rain_label, rain);
 }
 
 void s1_ui_home_overlay_show(void)
 {
     if(overlay == NULL) s1_ui_home_overlay_init();
-    lv_obj_set_hidden(overlay, false);
+    set_hidden_if_changed(overlay, false);
     lv_obj_move_foreground(overlay);
     update_clock_text();
 }
 
 void s1_ui_home_overlay_hide(void)
 {
-    if(overlay != NULL) lv_obj_set_hidden(overlay, true);
+    set_hidden_if_changed(overlay, true);
 }
 
 void s1_ui_home_overlay_init(void)
