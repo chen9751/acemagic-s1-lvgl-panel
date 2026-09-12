@@ -52,6 +52,12 @@ static const char *weekday_names[] = {
     "星期六"
 };
 
+static char home_last_hour[4];
+static char home_last_minute[4];
+static char home_last_period[4];
+static char home_last_date[20];
+static int home_last_weekday = -1;
+
 
 /* =========================================================
  * Music page
@@ -79,6 +85,9 @@ static lv_timer_t *music_flash_timer;
 static s1_music_action_cb_t music_action_callback;
 static void *music_action_user_data;
 static uint32_t music_controls_guard_until;
+static int32_t music_last_progress_percent = -1;
+static uint32_t music_last_elapsed_seconds = UINT32_MAX;
+static uint32_t music_last_duration_seconds = UINT32_MAX;
 
 
 /* =========================================================
@@ -156,7 +165,25 @@ static void set_hidden(
     bool hidden
 )
 {
+    if(obj == NULL || lv_obj_is_hidden(obj) == hidden) {
+        return;
+    }
+
     lv_obj_set_hidden(obj, hidden);
+}
+
+static void set_label_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if(label == NULL || text == NULL) {
+        return;
+    }
+
+    const char *current = lv_label_get_text(label);
+    if(current != NULL && strcmp(current, text) == 0) {
+        return;
+    }
+
+    lv_label_set_text(label, text);
 }
 
 
@@ -183,10 +210,12 @@ static void update_home_clock(lv_timer_t *timer)
 
     char hour_text[4];
     char minute_text[4];
+    char period_text[4];
     char date_text[20];
 
     snprintf(hour_text, sizeof(hour_text), "%02d", hour);
     snprintf(minute_text, sizeof(minute_text), "%02d", local->tm_min);
+    snprintf(period_text, sizeof(period_text), "%s", local->tm_hour < 12 ? "AM" : "PM");
     snprintf(
         date_text,
         sizeof(date_text),
@@ -195,17 +224,33 @@ static void update_home_clock(lv_timer_t *timer)
         local->tm_mday
     );
 
-    lv_label_set_text(home_hour_label, hour_text);
-    lv_label_set_text(home_minute_label, minute_text);
-    lv_label_set_text(
-        home_period_label,
-        local->tm_hour < 12 ? "AM" : "PM"
-    );
-    lv_label_set_text(home_date_label, date_text);
-    lv_label_set_text(
-        home_weekday_label,
-        weekday_names[local->tm_wday]
-    );
+    if(strcmp(home_last_hour, hour_text) != 0) {
+        set_label_text_if_changed(home_hour_label, hour_text);
+        snprintf(home_last_hour, sizeof(home_last_hour), "%s", hour_text);
+    }
+
+    if(strcmp(home_last_minute, minute_text) != 0) {
+        set_label_text_if_changed(home_minute_label, minute_text);
+        snprintf(home_last_minute, sizeof(home_last_minute), "%s", minute_text);
+    }
+
+    if(strcmp(home_last_period, period_text) != 0) {
+        set_label_text_if_changed(home_period_label, period_text);
+        snprintf(home_last_period, sizeof(home_last_period), "%s", period_text);
+    }
+
+    if(strcmp(home_last_date, date_text) != 0) {
+        set_label_text_if_changed(home_date_label, date_text);
+        snprintf(home_last_date, sizeof(home_last_date), "%s", date_text);
+    }
+
+    if(home_last_weekday != local->tm_wday) {
+        set_label_text_if_changed(
+            home_weekday_label,
+            weekday_names[local->tm_wday]
+        );
+        home_last_weekday = local->tm_wday;
+    }
 }
 
 
@@ -241,8 +286,8 @@ void s1_ui_home_set_weather(
         rain_probability_percent
     );
 
-    lv_label_set_text(home_temperature_label, temperature_text);
-    lv_label_set_text(home_rain_label, rain_text);
+    set_label_text_if_changed(home_temperature_label, temperature_text);
+    set_label_text_if_changed(home_rain_label, rain_text);
 }
 
 
@@ -450,11 +495,9 @@ static void activate_music_control(music_control_t control)
 
         case MUSIC_CONTROL_PLAY:
             music_playing = !music_playing;
-            lv_label_set_text(
+            set_label_text_if_changed(
                 music_play_icon,
-                music_playing
-                ? MUSIC_ICON_PAUSE
-                : MUSIC_ICON_PLAY
+                music_playing ? MUSIC_ICON_PAUSE : MUSIC_ICON_PLAY
             );
             dispatch_music_action(S1_MUSIC_ACTION_PLAY_PAUSE);
             music_selected = MUSIC_CONTROL_PLAY;
@@ -493,24 +536,26 @@ void s1_ui_music_set_metadata(
         return;
     }
 
-    lv_label_set_text(
+    set_label_text_if_changed(
         music_song_label,
         song != NULL && song[0] != '\0' ? song : "No track"
     );
-    lv_label_set_text(
+    set_label_text_if_changed(
         music_artist_label,
         artist != NULL && artist[0] != '\0' ? artist : "--"
     );
-    lv_label_set_text(
+    set_label_text_if_changed(
         music_album_label,
         album != NULL && album[0] != '\0' ? album : "--"
     );
 
-    music_playing = playing;
-    lv_label_set_text(
-        music_play_icon,
-        music_playing ? MUSIC_ICON_PAUSE : MUSIC_ICON_PLAY
-    );
+    if(music_playing != playing) {
+        music_playing = playing;
+        set_label_text_if_changed(
+            music_play_icon,
+            music_playing ? MUSIC_ICON_PAUSE : MUSIC_ICON_PLAY
+        );
+    }
 }
 
 
@@ -552,9 +597,20 @@ void s1_ui_music_set_progress(
         duration_seconds % 60
     );
 
-    lv_obj_set_width(music_progress_fill, LV_PCT(percent));
-    lv_label_set_text(music_elapsed_label, elapsed);
-    lv_label_set_text(music_duration_label, duration);
+    if(percent != music_last_progress_percent) {
+        lv_obj_set_width(music_progress_fill, LV_PCT(percent));
+        music_last_progress_percent = percent;
+    }
+
+    if(elapsed_seconds != music_last_elapsed_seconds) {
+        set_label_text_if_changed(music_elapsed_label, elapsed);
+        music_last_elapsed_seconds = elapsed_seconds;
+    }
+
+    if(duration_seconds != music_last_duration_seconds) {
+        set_label_text_if_changed(music_duration_label, duration);
+        music_last_duration_seconds = duration_seconds;
+    }
 }
 
 
@@ -675,7 +731,7 @@ static void update_led_rows(void)
             0
         );
 
-        lv_label_set_text(
+        set_label_text_if_changed(
             item->status_label,
             error ? "!" : (active ? LV_SYMBOL_OK : "")
         );
@@ -715,14 +771,14 @@ static void update_page(void)
     s1_ui_light_hide();
     s1_ui_placeholder_hide();
     set_hidden(subtitle_label, page == S1_PAGE_HOME);
-    lv_label_set_text(subtitle_label, s1_ui_page_name(page));
+    set_label_text_if_changed(subtitle_label, s1_ui_page_name(page));
     lv_obj_set_style_text_font(subtitle_label, &s1_ui_font_14, 0);
     lv_obj_set_style_text_color(subtitle_label, lv_color_hex(0x41BDF5), 0);
     if(s1_ui_router_is_horizontal_page(page)) {
         char position[16];
         snprintf(position, sizeof(position), "%d / 8", page + 1);
-        lv_label_set_text(page_label, position);
-    } else lv_label_set_text(page_label, "");
+        set_label_text_if_changed(page_label, position);
+    } else set_label_text_if_changed(page_label, "");
 
     if(page == S1_PAGE_HOME) {
         set_hidden(home_panel, false);
@@ -750,6 +806,9 @@ void s1_ui_key(uint32_t key)
     s1_page_id_t current_page = s1_ui_router_current();
 
     if(key == LV_KEY_HOME || key == LV_KEY_ESC) {
+        if(current_page == S1_PAGE_HOME) {
+            return;
+        }
         s1_ui_router_home();
         update_page();
         return;
