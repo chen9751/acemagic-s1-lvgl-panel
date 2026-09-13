@@ -128,7 +128,8 @@ void s1_ui_music_v2_init(void)
 
     note_label = lv_label_create(status_card);
     lv_label_set_text(note_label, LV_SYMBOL_AUDIO);
-    lv_obj_set_style_text_font(note_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(note_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_transform_scale(note_label, 384, 0);
     lv_obj_center(note_label);
 
     progress_track = lv_obj_create(overlay);
