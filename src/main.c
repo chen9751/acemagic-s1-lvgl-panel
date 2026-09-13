@@ -19,6 +19,7 @@
 #include "lvgl/lvgl.h"
 #include "../ui/s1_ui.h"
 #include "../ui/ui_theme.h"
+#include "../ui/pages/ui_home_v3.h"
 #include "../input/w1_input.h"
 #include "../services/ha_client.h"
 #include "../services/bluez_media_client.h"
@@ -26,6 +27,7 @@
 /* Keep standalone service/UI modules linked while the root CMake source list remains explicit. */
 #include "../services/bluez_media_client.c"
 #include "../ui/ui_theme.c"
+#include "../ui/pages/ui_home_v3.c"
 
 #include "lvgl/examples/lv_examples.h"
 #include "lvgl/demos/lv_demos.h"
@@ -83,6 +85,7 @@ int main(int argc, char **argv)
 
     s1_ui_init();
     s1_ui_apply_gradient_theme();
+    s1_ui_home_v3_init();
     w1_input_init();
 
     if(ha_client_init() != 0) printf("HA init failed\n");
