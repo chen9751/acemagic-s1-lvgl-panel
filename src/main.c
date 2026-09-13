@@ -19,16 +19,13 @@
 #include "lvgl/lvgl.h"
 #include "../ui/s1_ui.h"
 #include "../ui/ui_theme.h"
-#include "../ui/ui_second_pass.h"
 #include "../input/w1_input.h"
 #include "../services/ha_client.h"
 #include "../services/bluez_media_client.h"
 
-/* Keep standalone service/UI modules linked while the root CMake source list
- * remains explicit. */
+/* Keep standalone service/UI modules linked while the root CMake source list remains explicit. */
 #include "../services/bluez_media_client.c"
 #include "../ui/ui_theme.c"
-#include "../ui/ui_second_pass.c"
 
 #include "lvgl/examples/lv_examples.h"
 #include "lvgl/demos/lv_demos.h"
@@ -56,12 +53,10 @@ static void sync_music_from_bluez(void)
     if(!state.connected) {
         s1_ui_music_set_metadata(NULL, NULL, NULL, false);
         s1_ui_music_set_progress(0, 0);
-        s1_ui_second_pass_music_state(false);
         return;
     }
     s1_ui_music_set_metadata(state.title, state.artist, state.album, state.playing);
     s1_ui_music_set_progress(state.position_ms / 1000U, state.duration_ms / 1000U);
-    s1_ui_second_pass_music_state(state.playing);
 }
 
 #if LV_USE_OS != LV_OS_FREERTOS
@@ -73,25 +68,21 @@ int main(int argc, char **argv)
     lv_init();
     lv_tick_set_cb(s1_tick_get);
 
-    const char * display_backend = getenv("S1_DISPLAY");
+    const char *display_backend = getenv("S1_DISPLAY");
 
     if(display_backend && strcmp(display_backend, "s1") == 0) {
         printf("Display backend: S1 LCD\n");
-
         if(!s1_hal_init(170, 320)) {
             fprintf(stderr, "S1 LCD HAL initialization failed\n");
             return 1;
         }
-    }
-    else {
+    } else {
         printf("Display backend: SDL\n");
         sdl_hal_init(170, 320);
     }
 
     s1_ui_init();
     s1_ui_apply_gradient_theme();
-    s1_ui_second_pass_init();
-
     w1_input_init();
 
     if(ha_client_init() != 0) printf("HA init failed\n");
