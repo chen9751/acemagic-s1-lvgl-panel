@@ -40,6 +40,7 @@ static void music_set_hidden_if_changed(lv_obj_t *obj, bool hidden)
 
 static void apply_state_visual(void)
 {
+    if(status_card == NULL || note_label == NULL || progress_fill == NULL) return;
     uint32_t color = state_color();
     lv_obj_set_style_border_color(status_card, lv_color_hex(color), 0);
     lv_obj_set_style_text_color(note_label, lv_color_hex(color), 0);
@@ -79,12 +80,18 @@ static lv_obj_t *make_button(int x, const char *symbol, bool center)
     return button;
 }
 
-static void refresh_visibility(lv_timer_t *timer)
+void s1_ui_music_v2_sync_visibility(void)
 {
-    (void)timer;
+    if(overlay == NULL) return;
     bool show = s1_ui_router_current() == S1_PAGE_MUSIC;
     music_set_hidden_if_changed(overlay, !show);
     if(show) lv_obj_move_foreground(overlay);
+}
+
+static void refresh_visibility(lv_timer_t *timer)
+{
+    (void)timer;
+    s1_ui_music_v2_sync_visibility();
 }
 
 void s1_ui_music_v2_init(void)
@@ -158,7 +165,7 @@ void s1_ui_music_v2_init(void)
     lv_timer_create(refresh_visibility, 120, NULL);
 
     apply_state_visual();
-    refresh_visibility(NULL);
+    s1_ui_music_v2_sync_visibility();
 }
 
 void s1_ui_music_v2_set_state(bool is_connected, bool is_playing)
