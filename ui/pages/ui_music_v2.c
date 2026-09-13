@@ -11,11 +11,10 @@
 #define MUSIC_TEXT       0xDCEAF3
 #define MUSIC_SUBTEXT    0x8193A0
 #define MUSIC_DARK       0x071018
-#define MUSIC_DISC       0x08131B
+#define MUSIC_DISC       0x07121A
 #define MUSIC_RING       0x142733
 
 #define MUSIC_ICON_PAUSE "\xEF\x81\x8C"
-#define MUSIC_ICON_LOCK  "\xEF\x80\xA3"
 
 static lv_obj_t *music_panel;
 static lv_obj_t *status_card;
@@ -28,7 +27,7 @@ static lv_obj_t *progress_fill;
 static lv_obj_t *progress_thumb;
 static lv_obj_t *buttons[3];
 static lv_obj_t *button_labels[3];
-static lv_obj_t *lock_label;
+static lv_obj_t *lock_icon;
 static lv_timer_t *feedback_timer;
 
 static bool media_present;
@@ -74,8 +73,7 @@ static void apply_state_visual(void)
 {
     if(note_label == NULL || progress_fill == NULL) return;
 
-    /* The page keeps one blue visual identity in both playing and paused
-     * states.  Playback changes only touch compact dynamic objects. */
+    /* Keep one blue identity. State changes only touch compact dynamic items. */
     lv_obj_set_style_bg_color(status_dot,
                               lv_color_hex(media_present ? MUSIC_BLUE : MUSIC_GRAY), 0);
 
@@ -143,6 +141,44 @@ static lv_obj_t *find_routed_music_panel(void)
     return lv_obj_get_child(root, 4);
 }
 
+static lv_obj_t *make_lock_icon(lv_obj_t *parent)
+{
+    /* Draw the lock with basic LVGL objects instead of a font glyph. This
+     * avoids missing-glyph boxes on the current Montserrat build. */
+    lv_obj_t *root = lv_obj_create(parent);
+    lv_obj_set_size(root, 16, 18);
+    lv_obj_set_pos(root, 10, 2);
+    style_plain_object(root);
+    lv_obj_set_style_bg_opa(root, LV_OPA_TRANSP, 0);
+
+    lv_obj_t *shackle = lv_obj_create(root);
+    lv_obj_set_size(shackle, 10, 9);
+    lv_obj_set_pos(shackle, 3, 0);
+    style_plain_object(shackle);
+    lv_obj_set_style_radius(shackle, 5, 0);
+    lv_obj_set_style_bg_opa(shackle, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(shackle, 2, 0);
+    lv_obj_set_style_border_color(shackle, lv_color_hex(MUSIC_TEXT), 0);
+
+    lv_obj_t *body = lv_obj_create(root);
+    lv_obj_set_size(body, 14, 10);
+    lv_obj_set_pos(body, 1, 7);
+    style_plain_object(body);
+    lv_obj_set_style_radius(body, 3, 0);
+    lv_obj_set_style_bg_color(body, lv_color_hex(MUSIC_TEXT), 0);
+    lv_obj_set_style_bg_opa(body, LV_OPA_COVER, 0);
+
+    lv_obj_t *keyhole = lv_obj_create(body);
+    lv_obj_set_size(keyhole, 2, 4);
+    lv_obj_align(keyhole, LV_ALIGN_CENTER, 0, 1);
+    style_plain_object(keyhole);
+    lv_obj_set_style_radius(keyhole, 1, 0);
+    lv_obj_set_style_bg_color(keyhole, lv_color_hex(MUSIC_DARK), 0);
+    lv_obj_set_style_bg_opa(keyhole, LV_OPA_COVER, 0);
+
+    return root;
+}
+
 void s1_ui_music_v2_sync_visibility(void)
 {
     /* The routed panel is shown/hidden by s1_ui.c. */
@@ -169,20 +205,16 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_pad_all(music_panel, 0, 0);
     lv_obj_set_style_bg_opa(music_panel, LV_OPA_TRANSP, 0);
 
-    /* Current LVGL revision has no LV_SYMBOL_LOCK macro.  Use the
-     * Font Awesome lock glyph directly so the page stays build-compatible. */
-    lock_label = lv_label_create(music_panel);
-    lv_label_set_text(lock_label, MUSIC_ICON_LOCK);
-    lv_obj_set_pos(lock_label, 10, 4);
-    lv_obj_set_style_text_font(lock_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(lock_label, lv_color_hex(MUSIC_TEXT), 0);
-    lv_obj_add_flag(lock_label, LV_OBJ_FLAG_HIDDEN);
+    lock_icon = make_lock_icon(music_panel);
+    lv_obj_add_flag(lock_icon, LV_OBJ_FLAG_HIDDEN);
 
-    /* Single visual frame: one round record instead of the previous two
-     * nested rectangles.  Everything in this block is static after creation. */
+    /* The compact player references we checked all give the artwork one clear
+     * focal point and generous breathing room. Here the record is slightly
+     * smaller and lower than the previous version so it does not crowd the
+     * global MUSIC/time header. Every object in this block stays static. */
     status_card = lv_obj_create(music_panel);
-    lv_obj_set_size(status_card, 118, 118);
-    lv_obj_set_pos(status_card, 26, 18);
+    lv_obj_set_size(status_card, 108, 108);
+    lv_obj_set_pos(status_card, 31, 29);
     style_plain_object(status_card);
     lv_obj_set_style_radius(status_card, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(status_card, lv_color_hex(MUSIC_DISC), 0);
@@ -190,9 +222,8 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_border_width(status_card, 1, 0);
     lv_obj_set_style_border_color(status_card, lv_color_hex(MUSIC_BLUE_DIM), 0);
 
-    /* Static groove ring. */
     status_inner = lv_obj_create(status_card);
-    lv_obj_set_size(status_inner, 94, 94);
+    lv_obj_set_size(status_inner, 86, 86);
     lv_obj_center(status_inner);
     style_plain_object(status_inner);
     lv_obj_set_style_radius(status_inner, LV_RADIUS_CIRCLE, 0);
@@ -201,7 +232,7 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_border_color(status_inner, lv_color_hex(MUSIC_RING), 0);
 
     lv_obj_t *groove = lv_obj_create(status_card);
-    lv_obj_set_size(groove, 72, 72);
+    lv_obj_set_size(groove, 66, 66);
     lv_obj_center(groove);
     style_plain_object(groove);
     lv_obj_set_style_radius(groove, LV_RADIUS_CIRCLE, 0);
@@ -210,7 +241,7 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_border_color(groove, lv_color_hex(0x10212B), 0);
 
     lv_obj_t *center_disc = lv_obj_create(status_card);
-    lv_obj_set_size(center_disc, 48, 48);
+    lv_obj_set_size(center_disc, 44, 44);
     lv_obj_center(center_disc);
     style_plain_object(center_disc);
     lv_obj_set_style_radius(center_disc, LV_RADIUS_CIRCLE, 0);
@@ -223,35 +254,37 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_text_color(note_label, lv_color_hex(MUSIC_DARK), 0);
     lv_obj_center(note_label);
 
-    /* Small equalizer marks add detail without animation or redraw cost. */
-    const int heights[5] = { 5, 9, 13, 8, 5 };
+    /* A tiny static equalizer detail gives the disc a music identity without
+     * any animation or recurring invalidation. */
+    const int heights[5] = { 4, 8, 11, 7, 4 };
     for(int i = 0; i < 5; i++) {
         wave_bars[i] = lv_obj_create(status_card);
         lv_obj_set_size(wave_bars[i], 2, heights[i]);
-        lv_obj_set_pos(wave_bars[i], 45 + i * 7, 92 - heights[i] / 2);
+        lv_obj_set_pos(wave_bars[i], 41 + i * 6, 86 - heights[i] / 2);
         style_plain_object(wave_bars[i]);
         lv_obj_set_style_radius(wave_bars[i], 1, 0);
         lv_obj_set_style_bg_color(wave_bars[i], lv_color_hex(MUSIC_BLUE), 0);
-        lv_obj_set_style_bg_opa(wave_bars[i], LV_OPA_70, 0);
+        lv_obj_set_style_bg_opa(wave_bars[i], LV_OPA_60, 0);
     }
 
-    status_dot = lv_obj_create(music_panel);
+    /* Small status dot sits on the disc edge rather than floating outside it. */
+    status_dot = lv_obj_create(status_card);
     lv_obj_set_size(status_dot, 6, 6);
-    lv_obj_set_pos(status_dot, 132, 25);
+    lv_obj_set_pos(status_dot, 89, 13);
     style_plain_object(status_dot);
     lv_obj_set_style_radius(status_dot, LV_RADIUS_CIRCLE, 0);
 
     state_label = lv_label_create(music_panel);
     lv_obj_set_width(state_label, 150);
-    lv_obj_set_pos(state_label, 10, 146);
+    lv_obj_set_pos(state_label, 10, 148);
     lv_obj_set_style_text_font(state_label, &lv_font_montserrat_10, 0);
     lv_obj_set_style_text_letter_space(state_label, 2, 0);
     lv_obj_set_style_text_align(state_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(state_label, LV_LABEL_LONG_CLIP);
 
     lv_obj_t *progress_track = lv_obj_create(music_panel);
-    lv_obj_set_size(progress_track, 132, 4);
-    lv_obj_set_pos(progress_track, 19, 170);
+    lv_obj_set_size(progress_track, 126, 4);
+    lv_obj_set_pos(progress_track, 22, 174);
     style_plain_object(progress_track);
     lv_obj_set_style_radius(progress_track, 3, 0);
     lv_obj_set_style_bg_color(progress_track, lv_color_hex(0x2A3B47), 0);
@@ -271,11 +304,10 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_radius(progress_thumb, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(progress_thumb, lv_color_hex(MUSIC_BLUE), 0);
 
-    /* More breathing room than the previous row.  Side controls are icon-only
-     * while the center play/pause action carries the single strong circle. */
-    buttons[0] = make_button(0, 13, 218, 36, LV_SYMBOL_PREV);
-    buttons[1] = make_button(1, 59, 210, 52, LV_SYMBOL_PLAY);
-    buttons[2] = make_button(2, 121, 218, 36, LV_SYMBOL_NEXT);
+    /* Side controls remain icon-only and move farther from the center button. */
+    buttons[0] = make_button(0, 14, 222, 34, LV_SYMBOL_PREV);
+    buttons[1] = make_button(1, 60, 212, 50, LV_SYMBOL_PLAY);
+    buttons[2] = make_button(2, 122, 222, 34, LV_SYMBOL_NEXT);
 
     feedback_timer = lv_timer_create(clear_feedback, 180, NULL);
     lv_timer_pause(feedback_timer);
@@ -308,16 +340,16 @@ void s1_ui_music_v2_set_progress(uint32_t elapsed_seconds, uint32_t duration_sec
         if(bucket > 100) bucket = 100;
     }
 
-    /* The only continuous media redraw remains this narrow 132x7 region. */
+    /* The only continuous media redraw remains this narrow progress region. */
     if(bucket == progress_bucket) return;
     progress_bucket = bucket;
 
-    int fill_width = (132 * bucket) / 100;
+    int fill_width = (126 * bucket) / 100;
     lv_obj_set_width(progress_fill, fill_width);
 
     int thumb_x = fill_width - 3;
     if(thumb_x < 0) thumb_x = 0;
-    if(thumb_x > 125) thumb_x = 125;
+    if(thumb_x > 119) thumb_x = 119;
     lv_obj_set_x(progress_thumb, thumb_x);
 }
 
@@ -331,8 +363,8 @@ void s1_ui_music_v2_key_feedback(uint32_t key)
     else if(key == LV_KEY_RIGHT) index = 2;
     else if(key == S1_KEY_MENU) {
         locked = !locked;
-        if(locked) lv_obj_remove_flag(lock_label, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(lock_label, LV_OBJ_FLAG_HIDDEN);
+        if(locked) lv_obj_remove_flag(lock_icon, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(lock_icon, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
