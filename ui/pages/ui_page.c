@@ -1,5 +1,7 @@
 #include "ui_page.h"
+
 static lv_obj_t *panel;
+
 lv_obj_t *s1_ui_page_panel(lv_obj_t *parent)
 {
     lv_obj_t *obj = lv_obj_create(parent);
@@ -11,14 +13,17 @@ lv_obj_t *s1_ui_page_panel(lv_obj_t *parent)
     lv_obj_set_style_pad_all(obj, 0, 0);
     return obj;
 }
+
 const char *s1_ui_page_name(s1_page_id_t page)
 {
-    /* Light pages draw their room title inside the dedicated light layout. */
     static const char *names[] = {
-        "空调", "浴霸", "窗帘", "", "", "", "", "", "LED", "Music"
+        "", "Home Assistant", "LED", "Music",
+        "", "", "", "",
+        "空调", "浴霸", "窗帘"
     };
     return page >= 0 && page < S1_PAGE_COUNT ? names[page] : "";
 }
+
 void s1_ui_placeholder_init(lv_obj_t *parent)
 {
     panel = s1_ui_page_panel(parent);
@@ -29,6 +34,13 @@ void s1_ui_placeholder_init(lv_obj_t *parent)
     lv_obj_center(label);
     s1_ui_placeholder_hide();
 }
+
 void s1_ui_placeholder_show(s1_page_id_t page)
-{ lv_obj_set_hidden(panel, page < S1_PAGE_AC || page > S1_PAGE_CURTAIN); }
-void s1_ui_placeholder_hide(void) { lv_obj_set_hidden(panel, true); }
+{
+    lv_obj_set_hidden(panel, page < S1_PAGE_AC || page > S1_PAGE_CURTAIN);
+}
+
+void s1_ui_placeholder_hide(void)
+{
+    lv_obj_set_hidden(panel, true);
+}
