@@ -32,7 +32,7 @@ static uint32_t state_color(void)
     return playing ? MUSIC_BLUE : MUSIC_YELLOW;
 }
 
-static void set_hidden_if_changed(lv_obj_t *obj, bool hidden)
+static void music_set_hidden_if_changed(lv_obj_t *obj, bool hidden)
 {
     if(obj == NULL || lv_obj_is_hidden(obj) == hidden) return;
     lv_obj_set_hidden(obj, hidden);
@@ -83,7 +83,7 @@ static void refresh_visibility(lv_timer_t *timer)
 {
     (void)timer;
     bool show = s1_ui_router_current() == S1_PAGE_MUSIC;
-    set_hidden_if_changed(overlay, !show);
+    music_set_hidden_if_changed(overlay, !show);
     if(show) lv_obj_move_foreground(overlay);
 }
 
@@ -192,7 +192,7 @@ void s1_ui_music_v2_key_feedback(uint32_t key)
     else if(key == LV_KEY_RIGHT) index = 2;
     else if(key == S1_KEY_MENU) {
         locked = !locked;
-        set_hidden_if_changed(lock_label, !locked);
+        music_set_hidden_if_changed(lock_label, !locked);
         return;
     }
     if(index < 0) return;
