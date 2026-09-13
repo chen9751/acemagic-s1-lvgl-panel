@@ -20,6 +20,7 @@
 #include "../ui/s1_ui.h"
 #include "../ui/ui_theme.h"
 #include "../ui/pages/ui_home_v3.h"
+#include "../ui/pages/ui_music_v2.h"
 #include "../input/w1_input.h"
 #include "../services/ha_client.h"
 #include "../services/bluez_media_client.h"
@@ -28,6 +29,7 @@
 #include "../services/bluez_media_client.c"
 #include "../ui/ui_theme.c"
 #include "../ui/pages/ui_home_v3.c"
+#include "../ui/pages/ui_music_v2.c"
 
 #include "lvgl/examples/lv_examples.h"
 #include "lvgl/demos/lv_demos.h"
@@ -52,13 +54,19 @@ static void sync_music_from_bluez(void)
 {
     bluez_media_state_t state;
     if(!bluez_media_poll(&state)) return;
+
+    s1_ui_music_v2_set_state(state.connected, state.playing);
+
     if(!state.connected) {
         s1_ui_music_set_metadata(NULL, NULL, NULL, false);
         s1_ui_music_set_progress(0, 0);
+        s1_ui_music_v2_set_progress(0, 0);
         return;
     }
+
     s1_ui_music_set_metadata(state.title, state.artist, state.album, state.playing);
     s1_ui_music_set_progress(state.position_ms / 1000U, state.duration_ms / 1000U);
+    s1_ui_music_v2_set_progress(state.position_ms / 1000U, state.duration_ms / 1000U);
 }
 
 #if LV_USE_OS != LV_OS_FREERTOS
@@ -86,6 +94,7 @@ int main(int argc, char **argv)
     s1_ui_init();
     s1_ui_apply_gradient_theme();
     s1_ui_home_v3_init();
+    s1_ui_music_v2_init();
     w1_input_init();
 
     if(ha_client_init() != 0) printf("HA init failed\n");
