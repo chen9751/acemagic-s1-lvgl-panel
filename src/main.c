@@ -55,7 +55,10 @@ static void sync_music_from_bluez(void)
     bluez_media_state_t state;
     if(!bluez_media_poll(&state)) return;
 
-    s1_ui_music_v2_set_state(state.connected, state.playing);
+    /* Three visual states:
+     * stopped/disconnected = gray, paused = yellow, playing = blue. */
+    bool has_active_media = state.connected && (state.playing || state.paused);
+    s1_ui_music_v2_set_state(has_active_media, state.playing);
 
     if(!state.connected) {
         s1_ui_music_set_metadata(NULL, NULL, NULL, false);
