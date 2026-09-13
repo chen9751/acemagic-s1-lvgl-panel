@@ -143,17 +143,19 @@ static lv_obj_t *find_routed_music_panel(void)
 
 static lv_obj_t *make_lock_icon(lv_obj_t *parent)
 {
-    /* Draw the lock with basic LVGL objects instead of a font glyph. This
-     * avoids missing-glyph boxes on the current Montserrat build. */
+    /* The legacy music page still toggles its old LOCK text when locking.
+     * Use this small opaque patch as the v2 lock container so that old text is
+     * fully covered, while the visible indicator remains icon-only. */
     lv_obj_t *root = lv_obj_create(parent);
-    lv_obj_set_size(root, 16, 18);
-    lv_obj_set_pos(root, 10, 2);
+    lv_obj_set_size(root, 42, 22);
+    lv_obj_set_pos(root, 4, 0);
     style_plain_object(root);
-    lv_obj_set_style_bg_opa(root, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(root, lv_color_hex(MUSIC_DARK), 0);
+    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
 
     lv_obj_t *shackle = lv_obj_create(root);
     lv_obj_set_size(shackle, 10, 9);
-    lv_obj_set_pos(shackle, 3, 0);
+    lv_obj_set_pos(shackle, 7, 1);
     style_plain_object(shackle);
     lv_obj_set_style_radius(shackle, 5, 0);
     lv_obj_set_style_bg_opa(shackle, LV_OPA_TRANSP, 0);
@@ -162,7 +164,7 @@ static lv_obj_t *make_lock_icon(lv_obj_t *parent)
 
     lv_obj_t *body = lv_obj_create(root);
     lv_obj_set_size(body, 14, 10);
-    lv_obj_set_pos(body, 1, 7);
+    lv_obj_set_pos(body, 5, 8);
     style_plain_object(body);
     lv_obj_set_style_radius(body, 3, 0);
     lv_obj_set_style_bg_color(body, lv_color_hex(MUSIC_TEXT), 0);
