@@ -27,12 +27,10 @@
 #define MUSIC_ICON_PAUSE    "\xEF\x81\x8C"
 #define MUSIC_ICON_NEXT     "\xEF\x81\x91"
 
-LV_FONT_DECLARE(s1_ui_font_14);
-LV_FONT_DECLARE(s1_led_font_12);
 LV_FONT_DECLARE(s1_nunito_extrabold_108);
 
 static const char *weekday_names[] = {
-    "星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"
+    "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"
 };
 
 static const char *light_entities[4] = {
@@ -42,7 +40,15 @@ static const char *light_entities[4] = {
     "light.yeelink_ceiling17_40d7_light"
 };
 
-static const char *light_names[4] = { "客厅", "书房", "卧室", "小卧" };
+static const char *home_light_names[4] = { "LIV", "STU", "BED", "SML" };
+static const char *ha_device_names[7] = {
+    "LIVING LIGHT", "STUDY LIGHT", "BEDROOM LIGHT", "SMALL LIGHT",
+    "AIR CONDITION", "CURTAIN", "BATH HEATER"
+};
+static const char *ha_device_short[7] = {
+    "LIVING", "STUDY", "BEDROOM", "SMALL", "AC", "CURTAIN", "BATH"
+};
+
 static const s1_page_id_t light_pages[4] = {
     S1_PAGE_LIGHT_LIVING,
     S1_PAGE_LIGHT_STUDY,
@@ -66,12 +72,18 @@ static lv_obj_t *home_bulb_stems[4];
 static lv_obj_t *home_bulb_bases[4];
 static lv_obj_t *home_state_labels[4];
 
-static lv_obj_t *ha_rows[7];
-static lv_obj_t *ha_state_labels[7];
+static lv_obj_t *ha_device_card;
+static lv_obj_t *ha_name_label;
+static lv_obj_t *ha_short_label;
+static lv_obj_t *ha_state_label;
+static lv_obj_t *ha_power_box;
+static lv_obj_t *ha_power_title;
+static lv_obj_t *ha_detail_title;
+static lv_obj_t *ha_hint_label;
 
 static lv_obj_t *led_ring;
 static lv_obj_t *led_mode_label;
-static lv_obj_t *led_subtitle_label;
+static lv_obj_t *led_index_label;
 static lv_obj_t *led_intensity_label;
 static lv_obj_t *led_speed_label;
 
@@ -79,19 +91,18 @@ static lv_obj_t *music_lock_label;
 static lv_obj_t *music_disc;
 static lv_obj_t *music_disc_center;
 static lv_obj_t *music_state_label;
-static lv_obj_t *music_progress_track;
 static lv_obj_t *music_progress_fill;
 static lv_obj_t *music_play_label;
 
-static int home_selected = 0;
-static int ha_selected = 0;
+static int home_selected;
+static int ha_selected;
 static int light_on_cache[4] = { -1, -1, -1, -1 };
-static int led_selected = 0;
-static int led_active = 0;
+static int led_selected;
+static int led_active;
 static uint8_t led_intensity = 3;
 static uint8_t led_speed = 3;
-static bool music_playing = false;
-static bool music_locked = false;
+static bool music_playing;
+static bool music_locked;
 static int music_progress_bucket = -1;
 static uint32_t last_activity_tick;
 static s1_music_action_cb_t music_action_callback;
@@ -106,11 +117,7 @@ static const led_mode_t led_modes[] = {
 };
 
 static const char *led_mode_names[] = {
-    "彩虹", "呼吸", "颜色循环", "自动", "关闭"
-};
-
-static const char *led_mode_subtitles[] = {
-    "Rainbow", "Breathing", "Color Cycle", "Automatic", "Off"
+    "RAINBOW", "BREATHING", "COLOR CYCLE", "AUTOMATIC", "OFF"
 };
 
 #define LED_MODE_COUNT 5
@@ -151,14 +158,12 @@ static void update_title(void)
 {
     s1_page_id_t page = s1_ui_router_current();
     const char *title = "";
-
-    if(page == S1_PAGE_HA) title = "Home Assistant";
+    if(page == S1_PAGE_HA) title = "HOME ASSISTANT";
     else if(page == S1_PAGE_LED) title = "LED";
-    else if(page == S1_PAGE_MUSIC) title = "Music";
-    else if(page == S1_PAGE_AC) title = "空调";
-    else if(page == S1_PAGE_BATH) title = "浴霸";
-    else if(page == S1_PAGE_CURTAIN) title = "窗帘";
-
+    else if(page == S1_PAGE_MUSIC) title = "MUSIC";
+    else if(page == S1_PAGE_AC) title = "AC";
+    else if(page == S1_PAGE_BATH) title = "BATH";
+    else if(page == S1_PAGE_CURTAIN) title = "CURTAIN";
     set_label_text_if_changed(title_label, title);
     set_hidden(title_label, page == S1_PAGE_HOME || s1_ui_router_is_light_page(page));
 }
@@ -171,13 +176,13 @@ static void update_home_clock(void)
 
     char hour[4];
     char minute[4];
-    char date[40];
+    char date[24];
     int h = local->tm_hour % 12;
     if(h == 0) h = 12;
 
     snprintf(hour, sizeof(hour), "%02d", h);
     snprintf(minute, sizeof(minute), "%02d", local->tm_min);
-    snprintf(date, sizeof(date), "%d月%d日  %s", local->tm_mon + 1, local->tm_mday, weekday_names[local->tm_wday]);
+    snprintf(date, sizeof(date), "%02d/%02d  %s", local->tm_mon + 1, local->tm_mday, weekday_names[local->tm_wday]);
 
     set_label_text_if_changed(home_hour_label, hour);
     set_label_text_if_changed(home_minute_label, minute);
@@ -193,11 +198,9 @@ static void update_home_card_visual(int index)
     lv_obj_set_style_bg_color(home_cards[index], lv_color_hex(selected ? UI_CARD_SELECTED : UI_CARD), 0);
     lv_obj_set_style_border_width(home_cards[index], selected ? 1 : 0, 0);
     lv_obj_set_style_border_color(home_cards[index], lv_color_hex(UI_BLUE), 0);
-
     lv_obj_set_style_bg_color(home_bulbs[index], lv_color_hex(lamp_color), 0);
     lv_obj_set_style_bg_color(home_bulb_stems[index], lv_color_hex(lamp_color), 0);
     lv_obj_set_style_bg_color(home_bulb_bases[index], lv_color_hex(lamp_color), 0);
-
     set_label_text_if_changed(home_state_labels[index], on ? "ON" : "OFF");
     lv_obj_set_style_text_color(home_state_labels[index], lv_color_hex(on ? UI_WARM : UI_OFF), 0);
 }
@@ -212,6 +215,35 @@ static void update_home_selection(int next)
     update_home_card_visual(home_selected);
 }
 
+static void update_ha_visual(void)
+{
+    set_label_text_if_changed(ha_name_label, ha_device_names[ha_selected]);
+    set_label_text_if_changed(ha_short_label, ha_device_short[ha_selected]);
+
+    if(ha_selected < 4) {
+        bool on = light_on_cache[ha_selected] == 1;
+        set_label_text_if_changed(ha_state_label, on ? "ON" : "OFF");
+        lv_obj_set_style_text_color(ha_state_label, lv_color_hex(on ? UI_BLUE : UI_MUTED), 0);
+        lv_obj_set_style_bg_opa(ha_power_box, LV_OPA_COVER, 0);
+        set_label_text_if_changed(ha_power_title, "OK  POWER");
+        set_label_text_if_changed(ha_hint_label, "LEFT/RIGHT DEVICE");
+    } else {
+        set_label_text_if_changed(ha_state_label, "--");
+        lv_obj_set_style_text_color(ha_state_label, lv_color_hex(UI_MUTED), 0);
+        lv_obj_set_style_bg_opa(ha_power_box, LV_OPA_30, 0);
+        set_label_text_if_changed(ha_power_title, "OK  --");
+        set_label_text_if_changed(ha_hint_label, "MENU FOR DETAIL");
+    }
+}
+
+static void update_ha_selection(int next)
+{
+    ha_selected = next;
+    if(ha_selected < 0) ha_selected = 6;
+    if(ha_selected > 6) ha_selected = 0;
+    update_ha_visual();
+}
+
 static void refresh_light_states(bool force)
 {
     for(int i = 0; i < 4; i++) {
@@ -221,40 +253,25 @@ static void refresh_light_states(bool force)
         if(!force && light_on_cache[i] == on) continue;
         light_on_cache[i] = on;
         update_home_card_visual(i);
-        set_label_text_if_changed(ha_state_labels[i], on ? "ON" : "OFF");
-        lv_obj_set_style_text_color(ha_state_labels[i], lv_color_hex(on ? UI_BLUE : UI_MUTED), 0);
+        if(ha_selected == i) update_ha_visual();
     }
-}
-
-static void update_ha_selection(int next)
-{
-    int old = ha_selected;
-    ha_selected = next;
-    if(ha_selected < 0) ha_selected = 6;
-    if(ha_selected > 6) ha_selected = 0;
-
-    lv_obj_set_style_bg_opa(ha_rows[old], LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ha_rows[old], 0, 0);
-    lv_obj_set_style_bg_opa(ha_rows[ha_selected], LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(ha_rows[ha_selected], lv_color_hex(UI_CARD_SELECTED), 0);
-    lv_obj_set_style_border_width(ha_rows[ha_selected], 1, 0);
-    lv_obj_set_style_border_color(ha_rows[ha_selected], lv_color_hex(UI_BLUE), 0);
 }
 
 static void update_led_visual(void)
 {
     bool off = led_modes[led_selected] == LED_MODE_OFF;
     set_label_text_if_changed(led_mode_label, led_mode_names[led_selected]);
-    set_label_text_if_changed(led_subtitle_label, led_mode_subtitles[led_selected]);
+    char text[20];
+    snprintf(text, sizeof(text), "%d / %d", led_selected + 1, LED_MODE_COUNT);
+    set_label_text_if_changed(led_index_label, text);
 
     uint32_t ring_color = off ? UI_OFF : (led_selected == led_active ? UI_BLUE : 0x875CFF);
     lv_obj_set_style_border_color(led_ring, lv_color_hex(ring_color), 0);
 
-    char value[16];
-    snprintf(value, sizeof(value), "亮度  %u/5", (unsigned)led_intensity);
-    set_label_text_if_changed(led_intensity_label, value);
-    snprintf(value, sizeof(value), "速度  %u/5", (unsigned)led_speed);
-    set_label_text_if_changed(led_speed_label, value);
+    snprintf(text, sizeof(text), "POWER  %u/5", (unsigned)led_intensity);
+    set_label_text_if_changed(led_intensity_label, text);
+    snprintf(text, sizeof(text), "SPEED  %u/5", (unsigned)led_speed);
+    set_label_text_if_changed(led_speed_label, text);
 }
 
 static void activate_led_mode(void)
@@ -275,7 +292,7 @@ static void update_music_visual(void)
     uint32_t color = music_playing ? UI_BLUE : UI_OFF;
     lv_obj_set_style_border_color(music_disc, lv_color_hex(color), 0);
     lv_obj_set_style_bg_color(music_disc_center, lv_color_hex(color), 0);
-    set_label_text_if_changed(music_state_label, music_playing ? "正在播放" : "已暂停");
+    set_label_text_if_changed(music_state_label, music_playing ? "PLAYING" : "PAUSED");
     lv_obj_set_style_text_color(music_state_label, lv_color_hex(color), 0);
     set_label_text_if_changed(music_play_label, music_playing ? MUSIC_ICON_PAUSE : MUSIC_ICON_PLAY);
     set_hidden(music_lock_label, !music_locked);
@@ -284,7 +301,6 @@ static void update_music_visual(void)
 static void update_page(void)
 {
     s1_page_id_t page = s1_ui_router_current();
-
     set_hidden(home_panel, true);
     set_hidden(ha_panel, true);
     set_hidden(led_panel, true);
@@ -300,6 +316,7 @@ static void update_page(void)
     } else if(page == S1_PAGE_HA) {
         set_hidden(ha_panel, false);
         refresh_light_states(true);
+        update_ha_visual();
     } else if(page == S1_PAGE_LED) {
         set_hidden(led_panel, false);
         update_led_visual();
@@ -317,10 +334,8 @@ static void periodic_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
     update_home_clock();
-
-    static int refresh_divider = 0;
-    refresh_divider++;
-    if(refresh_divider >= 3) {
+    static int refresh_divider;
+    if(++refresh_divider >= 3) {
         refresh_divider = 0;
         refresh_light_states(false);
     }
@@ -328,7 +343,6 @@ static void periodic_timer_cb(lv_timer_t *timer)
     s1_page_id_t page = s1_ui_router_current();
     if(page == S1_PAGE_HOME) return;
     if(page == S1_PAGE_MUSIC && music_locked) return;
-
     if((uint32_t)(lv_tick_get() - last_activity_tick) >= UI_IDLE_TIMEOUT_MS) {
         s1_ui_router_home();
         update_page();
@@ -347,14 +361,14 @@ static void create_home_card(int index, int x)
     lv_obj_set_style_pad_all(card, 0, 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
 
-    lv_obj_t *name = make_label(card, light_names[index], &s1_led_font_12, UI_TEXT);
+    lv_obj_t *name = make_label(card, home_light_names[index], &lv_font_montserrat_10, UI_TEXT);
     lv_obj_set_width(name, 36);
     lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(name, 1, 5);
+    lv_obj_set_pos(name, 1, 6);
 
     home_bulbs[index] = lv_obj_create(card);
     lv_obj_set_size(home_bulbs[index], 16, 16);
-    lv_obj_set_pos(home_bulbs[index], 11, 25);
+    lv_obj_set_pos(home_bulbs[index], 11, 26);
     lv_obj_set_scrollable(home_bulbs[index], false);
     lv_obj_set_style_radius(home_bulbs[index], LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(home_bulbs[index], 0, 0);
@@ -362,19 +376,19 @@ static void create_home_card(int index, int x)
 
     home_bulb_stems[index] = lv_obj_create(card);
     lv_obj_set_size(home_bulb_stems[index], 5, 6);
-    lv_obj_set_pos(home_bulb_stems[index], 16, 38);
+    lv_obj_set_pos(home_bulb_stems[index], 16, 39);
     lv_obj_set_style_border_width(home_bulb_stems[index], 0, 0);
     lv_obj_set_style_pad_all(home_bulb_stems[index], 0, 0);
 
     home_bulb_bases[index] = lv_obj_create(card);
     lv_obj_set_size(home_bulb_bases[index], 10, 3);
-    lv_obj_set_pos(home_bulb_bases[index], 14, 44);
+    lv_obj_set_pos(home_bulb_bases[index], 14, 45);
     lv_obj_set_style_border_width(home_bulb_bases[index], 0, 0);
     lv_obj_set_style_pad_all(home_bulb_bases[index], 0, 0);
 
     lv_obj_t *sofa_back = lv_obj_create(card);
     lv_obj_set_size(sofa_back, 22, 9);
-    lv_obj_set_pos(sofa_back, 8, 55);
+    lv_obj_set_pos(sofa_back, 8, 56);
     lv_obj_set_style_radius(sofa_back, 3, 0);
     lv_obj_set_style_border_width(sofa_back, 0, 0);
     lv_obj_set_style_bg_color(sofa_back, lv_color_hex(0x92A0AB), 0);
@@ -382,7 +396,7 @@ static void create_home_card(int index, int x)
 
     lv_obj_t *sofa_seat = lv_obj_create(card);
     lv_obj_set_size(sofa_seat, 26, 6);
-    lv_obj_set_pos(sofa_seat, 6, 63);
+    lv_obj_set_pos(sofa_seat, 6, 64);
     lv_obj_set_style_radius(sofa_seat, 2, 0);
     lv_obj_set_style_border_width(sofa_seat, 0, 0);
     lv_obj_set_style_bg_color(sofa_seat, lv_color_hex(0x92A0AB), 0);
@@ -391,8 +405,7 @@ static void create_home_card(int index, int x)
     home_state_labels[index] = make_label(card, "OFF", &lv_font_montserrat_12, UI_OFF);
     lv_obj_set_width(home_state_labels[index], 36);
     lv_obj_set_style_text_align(home_state_labels[index], LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(home_state_labels[index], 1, 78);
-
+    lv_obj_set_pos(home_state_labels[index], 1, 79);
     update_home_card_visual(index);
 }
 
@@ -402,8 +415,8 @@ static void create_home_ui(void)
     lv_obj_set_size(home_panel, SCREEN_W, SCREEN_H);
     style_panel(home_panel);
 
-    home_date_label = make_label(home_panel, "", &s1_ui_font_14, 0xD7E1E8);
-    lv_obj_set_pos(home_date_label, 5, 9);
+    home_date_label = make_label(home_panel, "09/14  SUN", &lv_font_montserrat_14, 0xD7E1E8);
+    lv_obj_set_pos(home_date_label, 8, 8);
 
     home_hour_label = make_label(home_panel, "12", &s1_nunito_extrabold_108, UI_TEXT);
     lv_obj_set_size(home_hour_label, 160, 108);
@@ -426,31 +439,70 @@ static void create_home_ui(void)
 static void create_ha_ui(void)
 {
     ha_panel = lv_obj_create(root);
-    lv_obj_set_size(ha_panel, 158, 282);
-    lv_obj_set_pos(ha_panel, 6, 31);
+    lv_obj_set_size(ha_panel, SCREEN_W, 286);
+    lv_obj_set_pos(ha_panel, 0, 30);
     style_panel(ha_panel);
 
-    const char *names[7] = { "客厅灯", "书房灯", "卧室灯", "小卧室灯", "空调", "窗帘", "浴霸" };
-    const char *states[7] = { "--", "--", "--", "--", "--", "--", "--" };
+    lv_obj_t *left = make_label(ha_panel, "<", &lv_font_montserrat_24, 0xBED7E8);
+    lv_obj_set_pos(left, 10, 86);
+    lv_obj_t *right = make_label(ha_panel, ">", &lv_font_montserrat_24, 0xBED7E8);
+    lv_obj_set_pos(right, 147, 86);
 
-    for(int i = 0; i < 7; i++) {
-        ha_rows[i] = lv_obj_create(ha_panel);
-        lv_obj_set_size(ha_rows[i], 158, 37);
-        lv_obj_set_pos(ha_rows[i], 0, i * 39);
-        lv_obj_set_scrollable(ha_rows[i], false);
-        lv_obj_set_style_radius(ha_rows[i], 8, 0);
-        lv_obj_set_style_bg_opa(ha_rows[i], i == 0 ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        lv_obj_set_style_bg_color(ha_rows[i], lv_color_hex(UI_CARD_SELECTED), 0);
-        lv_obj_set_style_border_width(ha_rows[i], i == 0 ? 1 : 0, 0);
-        lv_obj_set_style_border_color(ha_rows[i], lv_color_hex(UI_BLUE), 0);
-        lv_obj_set_style_pad_all(ha_rows[i], 0, 0);
+    ha_device_card = lv_obj_create(ha_panel);
+    lv_obj_set_size(ha_device_card, 118, 132);
+    lv_obj_set_pos(ha_device_card, 26, 28);
+    lv_obj_set_scrollable(ha_device_card, false);
+    lv_obj_set_style_radius(ha_device_card, 16, 0);
+    lv_obj_set_style_bg_color(ha_device_card, lv_color_hex(UI_CARD_SELECTED), 0);
+    lv_obj_set_style_border_width(ha_device_card, 2, 0);
+    lv_obj_set_style_border_color(ha_device_card, lv_color_hex(UI_BLUE), 0);
+    lv_obj_set_style_pad_all(ha_device_card, 0, 0);
 
-        lv_obj_t *name = make_label(ha_rows[i], names[i], &s1_ui_font_14, UI_TEXT);
-        lv_obj_align(name, LV_ALIGN_LEFT_MID, 11, 0);
+    ha_short_label = make_label(ha_device_card, "LIVING", &lv_font_montserrat_20, UI_BLUE);
+    lv_obj_set_width(ha_short_label, 108);
+    lv_obj_set_style_text_align(ha_short_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(ha_short_label, 5, 24);
 
-        ha_state_labels[i] = make_label(ha_rows[i], states[i], &lv_font_montserrat_14, UI_MUTED);
-        lv_obj_align(ha_state_labels[i], LV_ALIGN_RIGHT_MID, -9, 0);
-    }
+    ha_name_label = make_label(ha_device_card, "LIVING LIGHT", &lv_font_montserrat_12, UI_TEXT);
+    lv_obj_set_width(ha_name_label, 108);
+    lv_obj_set_style_text_align(ha_name_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(ha_name_label, 5, 57);
+
+    ha_state_label = make_label(ha_device_card, "OFF", &lv_font_montserrat_20, UI_MUTED);
+    lv_obj_set_width(ha_state_label, 108);
+    lv_obj_set_style_text_align(ha_state_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(ha_state_label, 5, 88);
+
+    ha_power_box = lv_obj_create(ha_panel);
+    lv_obj_set_size(ha_power_box, 72, 58);
+    lv_obj_set_pos(ha_power_box, 9, 181);
+    lv_obj_set_scrollable(ha_power_box, false);
+    lv_obj_set_style_radius(ha_power_box, 12, 0);
+    lv_obj_set_style_bg_color(ha_power_box, lv_color_hex(UI_CARD), 0);
+    lv_obj_set_style_border_width(ha_power_box, 1, 0);
+    lv_obj_set_style_border_color(ha_power_box, lv_color_hex(0x23435A), 0);
+    lv_obj_set_style_pad_all(ha_power_box, 0, 0);
+    ha_power_title = make_label(ha_power_box, "OK  POWER", &lv_font_montserrat_12, UI_TEXT);
+    lv_obj_center(ha_power_title);
+
+    lv_obj_t *detail_box = lv_obj_create(ha_panel);
+    lv_obj_set_size(detail_box, 72, 58);
+    lv_obj_set_pos(detail_box, 89, 181);
+    lv_obj_set_scrollable(detail_box, false);
+    lv_obj_set_style_radius(detail_box, 12, 0);
+    lv_obj_set_style_bg_color(detail_box, lv_color_hex(UI_CARD), 0);
+    lv_obj_set_style_border_width(detail_box, 1, 0);
+    lv_obj_set_style_border_color(detail_box, lv_color_hex(0x23435A), 0);
+    lv_obj_set_style_pad_all(detail_box, 0, 0);
+    ha_detail_title = make_label(detail_box, "MENU\nDETAIL", &lv_font_montserrat_12, UI_TEXT);
+    lv_obj_set_style_text_align(ha_detail_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(ha_detail_title);
+
+    ha_hint_label = make_label(ha_panel, "LEFT/RIGHT DEVICE", &lv_font_montserrat_10, UI_MUTED);
+    lv_obj_set_width(ha_hint_label, 160);
+    lv_obj_set_style_text_align(ha_hint_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(ha_hint_label, 5, 257);
+    update_ha_visual();
 }
 
 static void create_led_ui(void)
@@ -470,11 +522,13 @@ static void create_led_ui(void)
     lv_obj_set_style_bg_opa(led_ring, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(led_ring, 0, 0);
 
-    led_mode_label = make_label(led_ring, "彩虹", &s1_ui_font_14, UI_TEXT);
+    led_mode_label = make_label(led_ring, "RAINBOW", &lv_font_montserrat_14, UI_TEXT);
+    lv_obj_set_width(led_mode_label, 100);
+    lv_obj_set_style_text_align(led_mode_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(led_mode_label);
 
-    led_subtitle_label = make_label(led_panel, "Rainbow", &lv_font_montserrat_12, UI_MUTED);
-    lv_obj_align(led_subtitle_label, LV_ALIGN_TOP_MID, 0, 139);
+    led_index_label = make_label(led_panel, "1 / 5", &lv_font_montserrat_12, UI_MUTED);
+    lv_obj_align(led_index_label, LV_ALIGN_TOP_MID, 0, 140);
 
     lv_obj_t *left = make_label(led_panel, "<", &lv_font_montserrat_24, 0xBED7E8);
     lv_obj_set_pos(left, 12, 68);
@@ -490,8 +544,7 @@ static void create_led_ui(void)
     lv_obj_set_style_border_width(box1, 1, 0);
     lv_obj_set_style_border_color(box1, lv_color_hex(0x23435A), 0);
     lv_obj_set_style_pad_all(box1, 0, 0);
-
-    led_intensity_label = make_label(box1, "亮度  3/5", &s1_led_font_12, UI_TEXT);
+    led_intensity_label = make_label(box1, "POWER  3/5", &lv_font_montserrat_10, UI_TEXT);
     lv_obj_center(led_intensity_label);
 
     lv_obj_t *box2 = lv_obj_create(led_panel);
@@ -503,8 +556,7 @@ static void create_led_ui(void)
     lv_obj_set_style_border_width(box2, 1, 0);
     lv_obj_set_style_border_color(box2, lv_color_hex(0x23435A), 0);
     lv_obj_set_style_pad_all(box2, 0, 0);
-
-    led_speed_label = make_label(box2, "速度  3/5", &s1_led_font_12, UI_TEXT);
+    led_speed_label = make_label(box2, "SPEED  3/5", &lv_font_montserrat_10, UI_TEXT);
     lv_obj_center(led_speed_label);
 }
 
@@ -516,11 +568,10 @@ static lv_obj_t *create_round_music_button(lv_obj_t *parent, int x, const char *
     lv_obj_set_pos(button, x, center ? 222 : 227);
     lv_obj_set_scrollable(button, false);
     lv_obj_set_style_radius(button, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x101C27), 0);
+    lv_obj_set_style_bg_color(button, lv_color_hex(UI_CARD), 0);
     lv_obj_set_style_border_width(button, 1, 0);
     lv_obj_set_style_border_color(button, lv_color_hex(center ? 0x7D9CB4 : 0x254054), 0);
     lv_obj_set_style_pad_all(button, 0, 0);
-
     lv_obj_t *label = make_label(button, symbol, &lv_font_montserrat_24, 0xD7E9F5);
     lv_obj_center(label);
     if(center) music_play_label = label;
@@ -573,19 +624,21 @@ static void create_music_ui(void)
     lv_obj_set_style_border_width(spindle, 0, 0);
     lv_obj_set_style_pad_all(spindle, 0, 0);
 
-    music_state_label = make_label(music_panel, "已暂停", &s1_ui_font_14, UI_OFF);
-    lv_obj_align(music_state_label, LV_ALIGN_TOP_MID, 0, 154);
+    music_state_label = make_label(music_panel, "PAUSED", &lv_font_montserrat_14, UI_OFF);
+    lv_obj_set_width(music_state_label, 150);
+    lv_obj_set_style_text_align(music_state_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(music_state_label, 10, 154);
 
-    music_progress_track = lv_obj_create(music_panel);
-    lv_obj_set_size(music_progress_track, 142, 7);
-    lv_obj_set_pos(music_progress_track, 14, 184);
-    lv_obj_set_scrollable(music_progress_track, false);
-    lv_obj_set_style_radius(music_progress_track, 4, 0);
-    lv_obj_set_style_bg_color(music_progress_track, lv_color_hex(0x3A4957), 0);
-    lv_obj_set_style_border_width(music_progress_track, 0, 0);
-    lv_obj_set_style_pad_all(music_progress_track, 0, 0);
+    lv_obj_t *progress_track = lv_obj_create(music_panel);
+    lv_obj_set_size(progress_track, 142, 7);
+    lv_obj_set_pos(progress_track, 14, 184);
+    lv_obj_set_scrollable(progress_track, false);
+    lv_obj_set_style_radius(progress_track, 4, 0);
+    lv_obj_set_style_bg_color(progress_track, lv_color_hex(0x3A4957), 0);
+    lv_obj_set_style_border_width(progress_track, 0, 0);
+    lv_obj_set_style_pad_all(progress_track, 0, 0);
 
-    music_progress_fill = lv_obj_create(music_progress_track);
+    music_progress_fill = lv_obj_create(progress_track);
     lv_obj_set_size(music_progress_fill, 0, 7);
     lv_obj_set_pos(music_progress_fill, 0, 0);
     lv_obj_set_scrollable(music_progress_fill, false);
@@ -597,7 +650,6 @@ static void create_music_ui(void)
     create_round_music_button(music_panel, 18, MUSIC_ICON_PREVIOUS, false);
     create_round_music_button(music_panel, 61, MUSIC_ICON_PLAY, true);
     create_round_music_button(music_panel, 114, MUSIC_ICON_NEXT, false);
-
     update_music_visual();
 }
 
@@ -626,12 +678,10 @@ void s1_ui_init(void)
     create_ha_ui();
     create_led_ui();
     create_music_ui();
-
     s1_ui_light_init(root);
     s1_ui_placeholder_init(root);
     s1_ui_router_init();
     last_activity_tick = lv_tick_get();
-
     lv_timer_create(periodic_timer_cb, 1000, NULL);
     update_page();
 }
@@ -646,26 +696,24 @@ void s1_ui_key(uint32_t key)
         update_page();
         return;
     }
-
     if(key == LV_KEY_ESC) {
-        if(page == S1_PAGE_HOME) return;
-        s1_ui_router_home();
-        update_page();
+        if(page != S1_PAGE_HOME) {
+            s1_ui_router_home();
+            update_page();
+        }
         return;
     }
-
     if(s1_ui_router_is_light_page(page)) {
         s1_ui_light_key(key);
         return;
     }
-
     if(page == S1_PAGE_AC || page == S1_PAGE_BATH || page == S1_PAGE_CURTAIN) return;
 
+    /* UP/DOWN are reserved globally for the four primary pages. */
     if(key == LV_KEY_UP) {
         if(s1_ui_router_up()) update_page();
         return;
     }
-
     if(key == LV_KEY_DOWN) {
         if(s1_ui_router_down()) update_page();
         return;
@@ -675,6 +723,8 @@ void s1_ui_key(uint32_t key)
         if(key == LV_KEY_LEFT) update_home_selection(home_selected - 1);
         else if(key == LV_KEY_RIGHT) update_home_selection(home_selected + 1);
         else if(key == LV_KEY_ENTER) {
+            if(ha_toggle(light_entities[home_selected]) == 0) refresh_light_states(true);
+        } else if(key == S1_KEY_MENU) {
             s1_ui_router_open(light_pages[home_selected]);
             update_page();
         }
@@ -703,9 +753,8 @@ void s1_ui_key(uint32_t key)
         } else if(key == LV_KEY_RIGHT) {
             led_selected = (led_selected + 1) % LED_MODE_COUNT;
             update_led_visual();
-        } else if(key == LV_KEY_ENTER) {
-            activate_led_mode();
-        } else if(key == S1_KEY_MENU) {
+        } else if(key == LV_KEY_ENTER) activate_led_mode();
+        else if(key == S1_KEY_MENU) {
             led_intensity++;
             if(led_intensity > 5) led_intensity = 1;
             activate_led_mode();
@@ -751,14 +800,16 @@ void s1_ui_music_set_metadata(const char *song, const char *artist, const char *
 
 void s1_ui_music_set_progress(uint32_t elapsed_seconds, uint32_t duration_seconds)
 {
-    if(duration_seconds == 0) return;
+    if(duration_seconds == 0) {
+        music_progress_bucket = 0;
+        lv_obj_set_width(music_progress_fill, 0);
+        return;
+    }
     if(elapsed_seconds > duration_seconds) elapsed_seconds = duration_seconds;
-
     int raw_percent = (int)((uint64_t)elapsed_seconds * 100U / duration_seconds);
     int bucket = (raw_percent / 5) * 5;
     if(bucket > 100) bucket = 100;
     if(bucket == music_progress_bucket) return;
-
     music_progress_bucket = bucket;
     lv_obj_set_width(music_progress_fill, (142 * bucket) / 100);
 }
