@@ -3,21 +3,31 @@
 #include "../ui_router.h"
 #include "lvgl/lvgl.h"
 
-#define MUSIC_BLUE   0x1AA8F7
-#define MUSIC_YELLOW 0xFFD05A
-#define MUSIC_GRAY   0x6D7882
-#define MUSIC_CARD   0x101C27
-#define MUSIC_TEXT   0xD7E9F5
+#define MUSIC_BLUE       0x1AA8F7
+#define MUSIC_YELLOW     0xFFD05A
+#define MUSIC_GRAY       0x6D7882
+#define MUSIC_CARD       0x101C27
+#define MUSIC_CARD_INNER 0x0D1C26
+#define MUSIC_BORDER     0x274152
+#define MUSIC_TEXT       0xD7E9F5
+#define MUSIC_DARK       0x071018
+
+#define MUSIC_ICON_PAUSE "\xEF\x81\x8C"
 
 static lv_obj_t *music_panel;
 static lv_obj_t *status_card;
+static lv_obj_t *status_inner;
+static lv_obj_t *status_dot;
 static lv_obj_t *note_label;
+static lv_obj_t *wave_bars[5];
 static lv_obj_t *progress_fill;
+static lv_obj_t *progress_thumb;
 static lv_obj_t *buttons[3];
+static lv_obj_t *button_labels[3];
 static lv_obj_t *lock_label;
 static lv_timer_t *feedback_timer;
 
-static bool connected;
+static bool media_present;
 static bool playing;
 static bool locked;
 static int progress_bucket = -1;
@@ -25,8 +35,40 @@ static int highlighted = -1;
 
 static uint32_t state_color(void)
 {
-    if(!connected) return MUSIC_GRAY;
+    if(!media_present) return MUSIC_GRAY;
     return playing ? MUSIC_BLUE : MUSIC_YELLOW;
+}
+
+static void style_plain_object(lv_obj_t *obj)
+{
+    lv_obj_set_scrollable(obj, false);
+    lv_obj_set_style_border_width(obj, 0, 0);
+    lv_obj_set_style_pad_all(obj, 0, 0);
+}
+
+static void restore_button_visual(int index)
+{
+    if(index < 0 || index > 2 || buttons[index] == NULL) return;
+
+    if(index == 1) {
+        uint32_t color = state_color();
+        if(media_present) {
+            lv_obj_set_style_bg_color(buttons[index], lv_color_hex(color), 0);
+            lv_obj_set_style_bg_opa(buttons[index], LV_OPA_COVER, 0);
+            lv_obj_set_style_border_color(buttons[index], lv_color_hex(color), 0);
+            lv_obj_set_style_text_color(button_labels[index], lv_color_hex(MUSIC_DARK), 0);
+        } else {
+            lv_obj_set_style_bg_color(buttons[index], lv_color_hex(MUSIC_CARD), 0);
+            lv_obj_set_style_bg_opa(buttons[index], LV_OPA_COVER, 0);
+            lv_obj_set_style_border_color(buttons[index], lv_color_hex(MUSIC_GRAY), 0);
+            lv_obj_set_style_text_color(button_labels[index], lv_color_hex(MUSIC_GRAY), 0);
+        }
+    } else {
+        lv_obj_set_style_bg_color(buttons[index], lv_color_hex(MUSIC_CARD), 0);
+        lv_obj_set_style_bg_opa(buttons[index], LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(buttons[index], lv_color_hex(MUSIC_BORDER), 0);
+        lv_obj_set_style_text_color(button_labels[index], lv_color_hex(MUSIC_TEXT), 0);
+    }
 }
 
 static void apply_state_visual(void)
@@ -35,44 +77,51 @@ static void apply_state_visual(void)
 
     uint32_t color = state_color();
     lv_obj_set_style_border_color(status_card, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_color(status_dot, lv_color_hex(color), 0);
     lv_obj_set_style_text_color(note_label, lv_color_hex(color), 0);
     lv_obj_set_style_bg_color(progress_fill, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_color(progress_thumb, lv_color_hex(color), 0);
+
+    for(int i = 0; i < 5; i++) {
+        lv_obj_set_style_bg_color(wave_bars[i], lv_color_hex(color), 0);
+        lv_obj_set_style_bg_opa(wave_bars[i], media_present ? LV_OPA_70 : LV_OPA_30, 0);
+    }
+
+    if(button_labels[1] != NULL) {
+        lv_label_set_text(button_labels[1], playing ? MUSIC_ICON_PAUSE : LV_SYMBOL_PLAY);
+    }
+    restore_button_visual(1);
 }
 
 static void clear_feedback(lv_timer_t *timer)
 {
     (void)timer;
-
-    if(highlighted >= 0 && highlighted < 3 && buttons[highlighted] != NULL) {
-        lv_obj_set_style_bg_color(buttons[highlighted], lv_color_hex(MUSIC_CARD), 0);
-        lv_obj_set_style_border_color(buttons[highlighted], lv_color_hex(0x315064), 0);
-    }
-
+    if(highlighted >= 0 && highlighted < 3) restore_button_visual(highlighted);
     highlighted = -1;
     if(feedback_timer != NULL) lv_timer_pause(feedback_timer);
 }
 
-static lv_obj_t *make_button(int x, const char *symbol, bool center)
+static lv_obj_t *make_button(int index, int x, int y, int size, const char *symbol)
 {
-    int size = center ? 48 : 40;
-
     lv_obj_t *button = lv_obj_create(music_panel);
     lv_obj_set_size(button, size, size);
-    lv_obj_set_pos(button, x, center ? 216 : 220);
+    lv_obj_set_pos(button, x, y);
     lv_obj_set_scrollable(button, false);
     lv_obj_set_style_radius(button, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(button, lv_color_hex(MUSIC_CARD), 0);
     lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(button, 1, 0);
-    lv_obj_set_style_border_color(button, lv_color_hex(0x315064), 0);
+    lv_obj_set_style_border_width(button, index == 1 ? 2 : 1, 0);
+    lv_obj_set_style_border_color(button, lv_color_hex(MUSIC_BORDER), 0);
     lv_obj_set_style_pad_all(button, 0, 0);
 
     lv_obj_t *label = lv_label_create(button);
+    button_labels[index] = label;
     lv_label_set_text(label, symbol);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(MUSIC_TEXT), 0);
     lv_obj_center(label);
 
+    restore_button_visual(index);
     return button;
 }
 
@@ -81,18 +130,14 @@ static lv_obj_t *find_routed_music_panel(void)
     lv_obj_t *screen = lv_screen_active();
     if(screen == NULL || lv_obj_get_child_count(screen) == 0) return NULL;
 
-    /* s1_ui_init() creates one root object on the screen. Inside that root the
-     * children are: title, HOME, HA, LED, MUSIC, ... . Reuse that routed Music
-     * panel so the existing router remains the single visibility owner. */
     lv_obj_t *root = lv_obj_get_child(screen, 0);
     if(root == NULL || lv_obj_get_child_count(root) < 5) return NULL;
-
     return lv_obj_get_child(root, 4);
 }
 
 void s1_ui_music_v2_sync_visibility(void)
 {
-    /* Visibility is owned by s1_ui.c's router. Compatibility no-op. */
+    /* The routed panel is shown/hidden by s1_ui.c. */
 }
 
 void s1_ui_music_v2_init(void)
@@ -102,16 +147,12 @@ void s1_ui_music_v2_init(void)
     music_panel = find_routed_music_panel();
     if(music_panel == NULL) return;
 
-    /* IMPORTANT: do not lv_obj_clean(music_panel).
-     * s1_ui.c keeps pointers to the original Music children and continues to
-     * update them from BlueZ state. Deleting those objects leaves dangling
-     * pointers and causes the startup segfault seen in LVGL. Instead, preserve
-     * the original objects but hide them, then build the new visual children in
-     * the same routed panel. The legacy pointers remain valid and harmless. */
-    uint32_t legacy_count = lv_obj_get_child_count(music_panel);
-    for(uint32_t i = 0; i < legacy_count; i++) {
-        lv_obj_t *child = lv_obj_get_child(music_panel, (int32_t)i);
-        if(child != NULL) lv_obj_add_flag(child, LV_OBJ_FLAG_HIDDEN);
+    /* Preserve the old objects because s1_ui.c still owns pointers to them.
+     * Hiding them keeps those pointers valid while this layer supplies the new
+     * presentation inside the same routed panel. */
+    uint32_t old_count = lv_obj_get_child_count(music_panel);
+    for(uint32_t i = 0; i < old_count; i++) {
+        lv_obj_add_flag(lv_obj_get_child(music_panel, (int32_t)i), LV_OBJ_FLAG_HIDDEN);
     }
 
     lv_obj_set_size(music_panel, 170, 290);
@@ -124,47 +165,77 @@ void s1_ui_music_v2_init(void)
 
     lock_label = lv_label_create(music_panel);
     lv_label_set_text(lock_label, "LOCK");
-    lv_obj_set_pos(lock_label, 8, 3);
+    lv_obj_set_pos(lock_label, 8, 2);
     lv_obj_set_style_text_font(lock_label, &lv_font_montserrat_10, 0);
     lv_obj_set_style_text_color(lock_label, lv_color_hex(MUSIC_YELLOW), 0);
     lv_obj_add_flag(lock_label, LV_OBJ_FLAG_HIDDEN);
 
+    /* Artwork-style status tile.  The page has no album-art source, so use a
+     * quiet abstract card with a music note and small equalizer motif instead
+     * of pretending a vinyl record exists. */
     status_card = lv_obj_create(music_panel);
-    lv_obj_set_size(status_card, 132, 112);
-    lv_obj_set_pos(status_card, 19, 36);
-    lv_obj_set_scrollable(status_card, false);
-    lv_obj_set_style_radius(status_card, 20, 0);
-    lv_obj_set_style_bg_color(status_card, lv_color_hex(0x09141D), 0);
+    lv_obj_set_size(status_card, 130, 124);
+    lv_obj_set_pos(status_card, 20, 24);
+    style_plain_object(status_card);
+    lv_obj_set_style_radius(status_card, 22, 0);
+    lv_obj_set_style_bg_color(status_card, lv_color_hex(0x0A151D), 0);
     lv_obj_set_style_bg_opa(status_card, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(status_card, 3, 0);
-    lv_obj_set_style_pad_all(status_card, 0, 0);
+    lv_obj_set_style_border_width(status_card, 2, 0);
 
-    note_label = lv_label_create(status_card);
+    status_inner = lv_obj_create(status_card);
+    lv_obj_set_size(status_inner, 94, 84);
+    lv_obj_set_pos(status_inner, 18, 15);
+    style_plain_object(status_inner);
+    lv_obj_set_style_radius(status_inner, 17, 0);
+    lv_obj_set_style_bg_color(status_inner, lv_color_hex(MUSIC_CARD_INNER), 0);
+    lv_obj_set_style_bg_opa(status_inner, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(status_inner, 1, 0);
+    lv_obj_set_style_border_color(status_inner, lv_color_hex(0x1D3444), 0);
+
+    note_label = lv_label_create(status_inner);
     lv_label_set_text(note_label, LV_SYMBOL_AUDIO);
     lv_obj_set_style_text_font(note_label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_transform_scale(note_label, 384, 0);
-    lv_obj_center(note_label);
+    lv_obj_set_style_transform_scale(note_label, 330, 0);
+    lv_obj_align(note_label, LV_ALIGN_CENTER, 0, -4);
+
+    const int heights[5] = { 6, 11, 16, 10, 7 };
+    for(int i = 0; i < 5; i++) {
+        wave_bars[i] = lv_obj_create(status_inner);
+        lv_obj_set_size(wave_bars[i], 3, heights[i]);
+        lv_obj_set_pos(wave_bars[i], 31 + i * 8, 64 - heights[i] / 2);
+        style_plain_object(wave_bars[i]);
+        lv_obj_set_style_radius(wave_bars[i], 2, 0);
+    }
+
+    status_dot = lv_obj_create(status_card);
+    lv_obj_set_size(status_dot, 8, 8);
+    lv_obj_set_pos(status_dot, 108, 12);
+    style_plain_object(status_dot);
+    lv_obj_set_style_radius(status_dot, LV_RADIUS_CIRCLE, 0);
 
     lv_obj_t *progress_track = lv_obj_create(music_panel);
-    lv_obj_set_size(progress_track, 142, 8);
-    lv_obj_set_pos(progress_track, 14, 174);
-    lv_obj_set_scrollable(progress_track, false);
-    lv_obj_set_style_radius(progress_track, 4, 0);
-    lv_obj_set_style_border_width(progress_track, 0, 0);
-    lv_obj_set_style_pad_all(progress_track, 0, 0);
-    lv_obj_set_style_bg_color(progress_track, lv_color_hex(0x374754), 0);
+    lv_obj_set_size(progress_track, 142, 5);
+    lv_obj_set_pos(progress_track, 14, 169);
+    style_plain_object(progress_track);
+    lv_obj_set_style_radius(progress_track, 3, 0);
+    lv_obj_set_style_bg_color(progress_track, lv_color_hex(0x30404C), 0);
+    lv_obj_set_style_bg_opa(progress_track, LV_OPA_COVER, 0);
 
     progress_fill = lv_obj_create(progress_track);
-    lv_obj_set_size(progress_fill, 0, 8);
+    lv_obj_set_size(progress_fill, 0, 5);
     lv_obj_set_pos(progress_fill, 0, 0);
-    lv_obj_set_scrollable(progress_fill, false);
-    lv_obj_set_style_radius(progress_fill, 4, 0);
-    lv_obj_set_style_border_width(progress_fill, 0, 0);
-    lv_obj_set_style_pad_all(progress_fill, 0, 0);
+    style_plain_object(progress_fill);
+    lv_obj_set_style_radius(progress_fill, 3, 0);
 
-    buttons[0] = make_button(20, LV_SYMBOL_PREV, false);
-    buttons[1] = make_button(61, LV_SYMBOL_PLAY, true);
-    buttons[2] = make_button(113, LV_SYMBOL_NEXT, false);
+    progress_thumb = lv_obj_create(progress_track);
+    lv_obj_set_size(progress_thumb, 9, 9);
+    lv_obj_set_pos(progress_thumb, 0, -2);
+    style_plain_object(progress_thumb);
+    lv_obj_set_style_radius(progress_thumb, LV_RADIUS_CIRCLE, 0);
+
+    buttons[0] = make_button(0, 21, 216, 42, LV_SYMBOL_PREV);
+    buttons[1] = make_button(1, 57, 207, 56, LV_SYMBOL_PLAY);
+    buttons[2] = make_button(2, 107, 216, 42, LV_SYMBOL_NEXT);
 
     feedback_timer = lv_timer_create(clear_feedback, 180, NULL);
     lv_timer_pause(feedback_timer);
@@ -172,19 +243,19 @@ void s1_ui_music_v2_init(void)
     apply_state_visual();
 }
 
-void s1_ui_music_v2_set_state(bool is_connected, bool is_playing)
+void s1_ui_music_v2_set_state(bool has_media, bool is_playing)
 {
-    connected = is_connected;
-    playing = is_connected && is_playing;
+    media_present = has_media;
+    playing = has_media && is_playing;
     apply_state_visual();
 }
 
 void s1_ui_music_v2_set_progress(uint32_t elapsed_seconds, uint32_t duration_seconds)
 {
-    if(progress_fill == NULL) return;
+    if(progress_fill == NULL || progress_thumb == NULL) return;
 
     int bucket = 0;
-    if(connected && duration_seconds > 0) {
+    if(media_present && duration_seconds > 0) {
         if(elapsed_seconds > duration_seconds) elapsed_seconds = duration_seconds;
         int percent = (int)((uint64_t)elapsed_seconds * 100U / duration_seconds);
         bucket = (percent / 5) * 5;
@@ -193,7 +264,14 @@ void s1_ui_music_v2_set_progress(uint32_t elapsed_seconds, uint32_t duration_sec
 
     if(bucket == progress_bucket) return;
     progress_bucket = bucket;
-    lv_obj_set_width(progress_fill, (142 * bucket) / 100);
+
+    int fill_width = (142 * bucket) / 100;
+    lv_obj_set_width(progress_fill, fill_width);
+
+    int thumb_x = fill_width - 4;
+    if(thumb_x < 0) thumb_x = 0;
+    if(thumb_x > 133) thumb_x = 133;
+    lv_obj_set_x(progress_thumb, thumb_x);
 }
 
 void s1_ui_music_v2_key_feedback(uint32_t key)
@@ -214,13 +292,18 @@ void s1_ui_music_v2_key_feedback(uint32_t key)
     if(index < 0) return;
 
     if(highlighted >= 0 && highlighted < 3 && highlighted != index) {
-        lv_obj_set_style_bg_color(buttons[highlighted], lv_color_hex(MUSIC_CARD), 0);
-        lv_obj_set_style_border_color(buttons[highlighted], lv_color_hex(0x315064), 0);
+        restore_button_visual(highlighted);
     }
 
     highlighted = index;
-    lv_obj_set_style_bg_color(buttons[index], lv_color_hex(0x174B66), 0);
-    lv_obj_set_style_border_color(buttons[index], lv_color_hex(MUSIC_BLUE), 0);
+    if(index == 1) {
+        lv_obj_set_style_border_color(buttons[index], lv_color_hex(MUSIC_TEXT), 0);
+        lv_obj_set_style_border_width(buttons[index], 3, 0);
+    } else {
+        lv_obj_set_style_bg_color(buttons[index], lv_color_hex(0x174B66), 0);
+        lv_obj_set_style_border_color(buttons[index], lv_color_hex(MUSIC_BLUE), 0);
+    }
+
     lv_timer_reset(feedback_timer);
     lv_timer_resume(feedback_timer);
 }
