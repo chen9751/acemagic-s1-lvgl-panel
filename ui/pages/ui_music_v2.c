@@ -81,9 +81,9 @@ static lv_obj_t *find_routed_music_panel(void)
     lv_obj_t *screen = lv_screen_active();
     if(screen == NULL || lv_obj_get_child_count(screen) == 0) return NULL;
 
-    /* s1_ui_init() creates one root object on the screen.  Inside that root the
-     * children are: title, HOME, HA, LED, MUSIC, ... .  Reuse that routed Music
-     * panel instead of layering another full-screen overlay on top of it. */
+    /* s1_ui_init() creates one root object on the screen. Inside that root the
+     * children are: title, HOME, HA, LED, MUSIC, ... . Reuse that routed Music
+     * panel so the existing router remains the single visibility owner. */
     lv_obj_t *root = lv_obj_get_child(screen, 0);
     if(root == NULL || lv_obj_get_child_count(root) < 5) return NULL;
 
@@ -92,8 +92,7 @@ static lv_obj_t *find_routed_music_panel(void)
 
 void s1_ui_music_v2_sync_visibility(void)
 {
-    /* Visibility is now owned by s1_ui.c's router.  This function remains as a
-     * compatibility no-op for the input dispatcher. */
+    /* Visibility is owned by s1_ui.c's router. Compatibility no-op. */
 }
 
 void s1_ui_music_v2_init(void)
@@ -103,9 +102,18 @@ void s1_ui_music_v2_init(void)
     music_panel = find_routed_music_panel();
     if(music_panel == NULL) return;
 
-    /* Remove the old record-disc/status/button children and rebuild the page
-     * directly in the panel that the router already shows and hides. */
-    lv_obj_clean(music_panel);
+    /* IMPORTANT: do not lv_obj_clean(music_panel).
+     * s1_ui.c keeps pointers to the original Music children and continues to
+     * update them from BlueZ state. Deleting those objects leaves dangling
+     * pointers and causes the startup segfault seen in LVGL. Instead, preserve
+     * the original objects but hide them, then build the new visual children in
+     * the same routed panel. The legacy pointers remain valid and harmless. */
+    uint32_t legacy_count = lv_obj_get_child_count(music_panel);
+    for(uint32_t i = 0; i < legacy_count; i++) {
+        lv_obj_t *child = lv_obj_get_child(music_panel, (int32_t)i);
+        if(child != NULL) lv_obj_add_flag(child, LV_OBJ_FLAG_HIDDEN);
+    }
+
     lv_obj_set_size(music_panel, 170, 290);
     lv_obj_set_pos(music_panel, 0, 26);
     lv_obj_set_scrollable(music_panel, false);
