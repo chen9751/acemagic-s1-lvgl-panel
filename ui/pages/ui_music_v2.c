@@ -15,6 +15,7 @@
 #define MUSIC_RING       0x142733
 
 #define MUSIC_ICON_PAUSE "\xEF\x81\x8C"
+#define MUSIC_ICON_LOCK  "\xEF\x80\xA3"
 
 static lv_obj_t *music_panel;
 static lv_obj_t *status_card;
@@ -168,11 +169,10 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_pad_all(music_panel, 0, 0);
     lv_obj_set_style_bg_opa(music_panel, LV_OPA_TRANSP, 0);
 
-    /* LVGL has an AUDIO symbol but no standard vinyl/record symbol.  Use a
-     * clean lock glyph here and build the record impression from static LVGL
-     * circles so no image asset or large animated surface is required. */
+    /* Current LVGL revision has no LV_SYMBOL_LOCK macro.  Use the
+     * Font Awesome lock glyph directly so the page stays build-compatible. */
     lock_label = lv_label_create(music_panel);
-    lv_label_set_text(lock_label, LV_SYMBOL_LOCK);
+    lv_label_set_text(lock_label, MUSIC_ICON_LOCK);
     lv_obj_set_pos(lock_label, 10, 4);
     lv_obj_set_style_text_font(lock_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lock_label, lv_color_hex(MUSIC_TEXT), 0);
