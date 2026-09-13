@@ -104,7 +104,7 @@ static void create_card(int index, int x)
 {
     cards[index] = lv_obj_create(overlay);
     lv_obj_set_size(cards[index], 38, 78);
-    lv_obj_set_pos(cards[index], x, 236);
+    lv_obj_set_pos(cards[index], x, 239);
     lv_obj_set_scrollable(cards[index], false);
     lv_obj_set_style_radius(cards[index], 11, 0);
     lv_obj_set_style_pad_all(cards[index], 0, 0);
@@ -246,7 +246,7 @@ void s1_ui_home_v3_init(void)
     date_label = lv_label_create(overlay);
     lv_label_set_text(date_label, "9月14日  星期一");
     lv_obj_set_width(date_label, 170);
-    lv_obj_set_pos(date_label, 0, 7);
+    lv_obj_set_pos(date_label, 0, 13);
     lv_obj_set_style_text_align(date_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(date_label, &s1_home_info_font_14, 0);
     lv_obj_set_style_text_color(date_label, lv_color_hex(0xD7E1E8), 0);
@@ -254,7 +254,7 @@ void s1_ui_home_v3_init(void)
     hour_label = lv_label_create(overlay);
     lv_label_set_text(hour_label, "12");
     lv_obj_set_size(hour_label, 170, 108);
-    lv_obj_set_pos(hour_label, 0, 28);
+    lv_obj_set_pos(hour_label, 0, 36);
     lv_obj_set_style_text_align(hour_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(hour_label, &s1_nunito_extrabold_108, 0);
     lv_obj_set_style_text_color(hour_label, lv_color_hex(HOME_TEXT), 0);
@@ -263,7 +263,7 @@ void s1_ui_home_v3_init(void)
     minute_label = lv_label_create(overlay);
     lv_label_set_text(minute_label, "00");
     lv_obj_set_size(minute_label, 170, 108);
-    lv_obj_set_pos(minute_label, 0, 119);
+    lv_obj_set_pos(minute_label, 0, 128);
     lv_obj_set_style_text_align(minute_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(minute_label, &s1_nunito_extrabold_108, 0);
     lv_obj_set_style_text_color(minute_label, lv_color_hex(HOME_BLUE), 0);
