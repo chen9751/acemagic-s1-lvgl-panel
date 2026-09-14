@@ -171,31 +171,31 @@ static void refine_ha_panel(lv_obj_t *root)
     ha_state = lv_obj_get_child(ha_card, 2);
 
     if(ha_visible_name != NULL) {
-        lv_obj_set_width(ha_visible_name, 130);
-        lv_obj_set_pos(ha_visible_name, 5, 18);
+        lv_obj_set_width(ha_visible_name, 134);
         lv_obj_set_style_text_align(ha_visible_name, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_font(ha_visible_name, &s1_ui_font_14, 0);
         lv_obj_set_style_text_color(ha_visible_name, lv_color_hex(UI_TEXT), 0);
-        lv_obj_set_style_transform_scale(ha_visible_name, 330, 0);
+        lv_obj_set_style_transform_scale(ha_visible_name, 400, 0);
+        lv_obj_align(ha_visible_name, LV_ALIGN_TOP_MID, 0, 24);
     }
 
     /* The old English line remains as an internal selection identifier only. */
     if(ha_source_name != NULL) lv_obj_add_flag(ha_source_name, LV_OBJ_FLAG_HIDDEN);
 
     if(ha_state != NULL) {
-        lv_obj_set_width(ha_state, 130);
-        lv_obj_set_pos(ha_state, 5, 151);
+        lv_obj_set_width(ha_state, 134);
         lv_obj_set_style_text_align(ha_state, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_font(ha_state, &lv_font_montserrat_20, 0);
-        lv_obj_set_style_transform_scale(ha_state, 320, 0);
+        lv_obj_set_style_transform_scale(ha_state, 420, 0);
+        lv_obj_align(ha_state, LV_ALIGN_TOP_MID, 0, 158);
     }
 
     ha_icon = lv_label_create(ha_card);
-    lv_obj_set_width(ha_icon, 130);
-    lv_obj_set_pos(ha_icon, 5, 76);
+    lv_obj_set_width(ha_icon, 134);
     lv_obj_set_style_text_align(ha_icon, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(ha_icon, &s1_ui_font_14, 0);
-    lv_obj_set_style_transform_scale(ha_icon, 440, 0);
+    lv_obj_set_style_transform_scale(ha_icon, 600, 0);
+    lv_obj_align(ha_icon, LV_ALIGN_TOP_MID, 0, 82);
 
     /* The final HA page has one large card and one consistent MENU hint. */
     if(power_box != NULL) lv_obj_add_flag(power_box, LV_OBJ_FLAG_HIDDEN);
