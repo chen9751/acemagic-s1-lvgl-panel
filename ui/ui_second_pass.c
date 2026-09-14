@@ -110,8 +110,6 @@ static void render_ha_device(void)
 static void enforce_ha_chrome(void)
 {
     if(ha_title != NULL) {
-        /* Keep the real page name. The legacy UI already writes the same text,
-         * so there is no title race when switching devices. */
         set_label_if_needed(ha_title, "HOME ASSISTANT");
         lv_obj_set_style_text_font(ha_title, &lv_font_montserrat_10, 0);
         lv_obj_set_style_text_color(ha_title, lv_color_hex(0xC8D4DD), 0);
@@ -128,11 +126,17 @@ static void enforce_ha_chrome(void)
     }
 }
 
-static void ha_refresh_timer_cb(lv_timer_t *timer)
+static void ha_draw_begin_cb(lv_event_t *event)
 {
-    (void)timer;
+    (void)event;
     if(ha_panel == NULL || lv_obj_is_hidden(ha_panel)) return;
 
+    /* The legacy HA handler changes its hidden selector and footer immediately
+     * after LEFT/RIGHT. Previously a 20 ms timer corrected the final overlay,
+     * which left a small race with LVGL's display refresh and caused an
+     * occasional one-frame jump. Apply the final values at the beginning of
+     * the HA panel draw instead: this is the last point before any child is
+     * rendered, so no intermediate legacy frame can reach the display. */
     enforce_ha_chrome();
     render_ha_device();
 }
@@ -170,9 +174,8 @@ static void refine_ha_panel(lv_obj_t *root)
     ha_source_name = lv_obj_get_child(ha_card, 1);
     ha_state = lv_obj_get_child(ha_card, 2);
 
-    /* Do not reuse the legacy short-name label for the visible Chinese name.
-     * s1_ui.c rewrites that object immediately on LEFT/RIGHT, which caused the
-     * visible jump. Keep both legacy labels hidden and render a stable overlay. */
+    /* Keep the legacy selector labels permanently hidden. They are still used
+     * as the internal source of the selected-device id. */
     if(ha_legacy_short != NULL) lv_obj_add_flag(ha_legacy_short, LV_OBJ_FLAG_HIDDEN);
     if(ha_source_name != NULL) lv_obj_add_flag(ha_source_name, LV_OBJ_FLAG_HIDDEN);
 
@@ -212,9 +215,8 @@ static void refine_ha_panel(lv_obj_t *root)
     enforce_ha_chrome();
     render_ha_device();
 
-    /* The overlay name is never touched by the legacy key handler, so the
-     * timer only needs to pick up the selected-device id and HA state. */
-    lv_timer_create(ha_refresh_timer_cb, 20, NULL);
+    /* Synchronize exactly at draw time instead of racing a polling timer. */
+    lv_obj_add_event_cb(ha_panel, ha_draw_begin_cb, LV_EVENT_DRAW_MAIN_BEGIN, NULL);
 }
 
 static void refine_music_panel(lv_obj_t *root)
