@@ -195,7 +195,7 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_size(legacy_holder, 1, 1);
     style_plain_object(legacy_holder);
     lv_obj_set_style_bg_opa(legacy_holder, LV_OPA_TRANSP, 0);
-    lv_obj_add_flag(legacy_holder, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(legacy_holder, true);
     for(uint32_t i = 0; i < old_count; i++) {
         lv_obj_t *child = lv_obj_get_child(music_panel, 0);
         if(child == NULL || child == legacy_holder) break;
@@ -211,7 +211,7 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_bg_opa(music_panel, LV_OPA_TRANSP, 0);
 
     lock_icon = make_lock_icon(music_panel);
-    lv_obj_add_flag(lock_icon, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(lock_icon, true);
 
     status_card = lv_obj_create(music_panel);
     lv_obj_set_size(status_card, 108, 108);
@@ -358,8 +358,8 @@ void s1_ui_music_v2_key_feedback(uint32_t key)
     else if(key == LV_KEY_RIGHT) index = 2;
     else if(key == S1_KEY_MENU) {
         locked = !locked;
-        if(locked) lv_obj_remove_flag(lock_icon, LV_OBJ_FLAG_HIDDEN);
-        else lv_obj_add_flag(lock_icon, LV_OBJ_FLAG_HIDDEN);
+        if(locked) lv_obj_set_hidden(lock_icon, false);
+        else lv_obj_set_hidden(lock_icon, true);
         return;
     }
 

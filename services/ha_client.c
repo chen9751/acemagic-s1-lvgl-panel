@@ -119,6 +119,7 @@ static int request(const char *path, const char *body, char **response_out)
 
 static const char *json_value(const char *json, const char *key)
 {
+    if(json == NULL || key == NULL) return NULL;
     char needle[96];
     snprintf(needle, sizeof(needle), "\"%s\"", key);
     const char *p = strstr(json, needle);
@@ -180,6 +181,12 @@ int ha_get_light_state(const char *entity_id, ha_light_state_t *state)
 
     char power[16];
     if(json_string(json, "state", power, sizeof(power)) != 0) {
+        free(json);
+        return -1;
+    }
+
+    /* Unavailable/unknown is not a confirmed OFF state. */
+    if(strcmp(power, "on") != 0 && strcmp(power, "off") != 0) {
         free(json);
         return -1;
     }

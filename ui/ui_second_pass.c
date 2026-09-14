@@ -13,7 +13,6 @@
 
 LV_FONT_DECLARE(s1_ui_font_14);
 
-static lv_obj_t *music_status_overlay;
 static lv_obj_t *ha_panel;
 static lv_obj_t *ha_title;
 static lv_obj_t *ha_card;
@@ -39,27 +38,6 @@ static const char *ha_icons[7] = {
     HA_ICON_BULB, HA_ICON_BULB, HA_ICON_BULB, HA_ICON_BULB,
     "AC", "||", "HOT"
 };
-
-static lv_obj_t *find_label_text(lv_obj_t *parent, const char *a, const char *b)
-{
-    if(parent == NULL) return NULL;
-
-    uint32_t count = lv_obj_get_child_count(parent);
-    for(uint32_t i = 0; i < count; i++) {
-        lv_obj_t *child = lv_obj_get_child(parent, (int32_t)i);
-        if(lv_obj_check_type(child, &lv_label_class)) {
-            const char *text = lv_label_get_text(child);
-            if(text != NULL && ((a != NULL && strcmp(text, a) == 0) ||
-                                (b != NULL && strcmp(text, b) == 0))) {
-                return child;
-            }
-        }
-
-        lv_obj_t *nested = find_label_text(child, a, b);
-        if(nested != NULL) return nested;
-    }
-    return NULL;
-}
 
 static void set_label_if_needed(lv_obj_t *label, const char *text)
 {
@@ -109,7 +87,7 @@ static void render_ha_device(void)
 
 static void enforce_ha_chrome(void)
 {
-    if(ha_title != NULL) {
+    if(ha_title != NULL && ha_panel != NULL && !lv_obj_is_hidden(ha_panel)) {
         set_label_if_needed(ha_title, "HOME ASSISTANT");
         lv_obj_set_style_text_font(ha_title, &lv_font_montserrat_10, 0);
         lv_obj_set_style_text_color(ha_title, lv_color_hex(0xC8D4DD), 0);
@@ -126,17 +104,10 @@ static void enforce_ha_chrome(void)
     }
 }
 
-static void ha_draw_begin_cb(lv_event_t *event)
+static void ha_value_changed_cb(lv_event_t *event)
 {
     (void)event;
-    if(ha_panel == NULL || lv_obj_is_hidden(ha_panel)) return;
-
-    /* The legacy HA handler changes its hidden selector and footer immediately
-     * after LEFT/RIGHT. Previously a 20 ms timer corrected the final overlay,
-     * which left a small race with LVGL's display refresh and caused an
-     * occasional one-frame jump. Apply the final values at the beginning of
-     * the HA panel draw instead: this is the last point before any child is
-     * rendered, so no intermediate legacy frame can reach the display. */
+    /* Update synchronously after model changes, before LVGL starts drawing. */
     enforce_ha_chrome();
     render_ha_device();
 }
@@ -176,8 +147,8 @@ static void refine_ha_panel(lv_obj_t *root)
 
     /* Keep the legacy selector labels permanently hidden. They are still used
      * as the internal source of the selected-device id. */
-    if(ha_legacy_short != NULL) lv_obj_add_flag(ha_legacy_short, LV_OBJ_FLAG_HIDDEN);
-    if(ha_source_name != NULL) lv_obj_add_flag(ha_source_name, LV_OBJ_FLAG_HIDDEN);
+    if(ha_legacy_short != NULL) lv_obj_set_hidden(ha_legacy_short, true);
+    if(ha_source_name != NULL) lv_obj_set_hidden(ha_source_name, true);
 
     ha_name_overlay = lv_label_create(ha_card);
     lv_obj_set_size(ha_name_overlay, 140, 22);
@@ -209,35 +180,14 @@ static void refine_ha_panel(lv_obj_t *root)
     }
 
     /* The final HA page has one large card and one consistent MENU hint. */
-    if(power_box != NULL) lv_obj_add_flag(power_box, LV_OBJ_FLAG_HIDDEN);
-    if(detail_box != NULL) lv_obj_add_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
+    if(power_box != NULL) lv_obj_set_hidden(power_box, true);
+    if(detail_box != NULL) lv_obj_set_hidden(detail_box, true);
 
     enforce_ha_chrome();
     render_ha_device();
 
-    /* Synchronize exactly at draw time instead of racing a polling timer. */
-    lv_obj_add_event_cb(ha_panel, ha_draw_begin_cb, LV_EVENT_DRAW_MAIN_BEGIN, NULL);
-}
-
-static void refine_music_panel(lv_obj_t *root)
-{
-    if(root == NULL || lv_obj_get_child_count(root) < 5) return;
-    lv_obj_t *music_panel = lv_obj_get_child(root, 4);
-    if(music_panel == NULL) return;
-
-    /* The existing 14 px CJK font does not contain these status glyphs on the
-     * simulator and renders boxes. Hide that label and use a guaranteed
-     * Montserrat English status instead. */
-    lv_obj_t *old = find_label_text(music_panel, "已暂停", "正在播放");
-    if(old != NULL) lv_obj_add_flag(old, LV_OBJ_FLAG_HIDDEN);
-
-    music_status_overlay = lv_label_create(music_panel);
-    lv_label_set_text(music_status_overlay, "PAUSED");
-    lv_obj_set_width(music_status_overlay, 150);
-    lv_obj_set_pos(music_status_overlay, 10, 154);
-    lv_obj_set_style_text_align(music_status_overlay, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(music_status_overlay, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(music_status_overlay, lv_color_hex(UI_MUTED), 0);
+    /* Model notifications also cover HA polling and page entry. */
+    lv_obj_add_event_cb(ha_panel, ha_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
 void s1_ui_second_pass_init(void)
@@ -247,16 +197,10 @@ void s1_ui_second_pass_init(void)
 
     lv_obj_t *root = lv_obj_get_child(screen, 0);
     refine_ha_panel(root);
-    refine_music_panel(root);
 }
 
 void s1_ui_second_pass_music_state(bool playing)
 {
-    if(music_status_overlay == NULL) return;
-    lv_label_set_text(music_status_overlay, playing ? "PLAYING" : "PAUSED");
-    lv_obj_set_style_text_color(
-        music_status_overlay,
-        lv_color_hex(playing ? UI_BLUE : UI_MUTED),
-        0
-    );
+    /* Music v2 owns playback state; do not recreate a duplicate status label. */
+    (void)playing;
 }

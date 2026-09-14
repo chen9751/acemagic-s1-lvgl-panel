@@ -121,7 +121,7 @@ static const led_mode_t led_modes[] = {
 };
 
 static const char *led_mode_names[] = {
-    "RAINBOW", "BREATHING", "COLOR CYCLE", "AUTOMATIC", "OFF"
+    "RAINBOW", "BREATHING", "COLOR", "AUTO", "OFF"
 };
 
 #define LED_MODE_COUNT 5
@@ -241,6 +241,7 @@ static void update_ha_visual(void)
         set_label_text_if_changed(ha_power_title, "OK  --");
         set_label_text_if_changed(ha_hint_label, "MENU FOR DETAIL");
     }
+    lv_obj_send_event(ha_panel, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
 static void update_ha_selection(int next)
@@ -275,9 +276,9 @@ static void update_led_visual(void)
     uint32_t ring_color = off ? UI_OFF : (led_selected == led_active ? UI_BLUE : 0x875CFF);
     lv_obj_set_style_border_color(led_ring, lv_color_hex(ring_color), 0);
 
-    snprintf(text, sizeof(text), "亮度  %u/5", (unsigned)led_intensity);
+    snprintf(text, sizeof(text), "亮度：%u/5", (unsigned)led_intensity);
     set_label_text_if_changed(led_intensity_label, text);
-    snprintf(text, sizeof(text), "速度  %u/5", (unsigned)led_speed);
+    snprintf(text, sizeof(text), "速度：%u/5", (unsigned)led_speed);
     set_label_text_if_changed(led_speed_label, text);
 
     bool intensity_selected = led_adjust_target == LED_ADJUST_INTENSITY;
@@ -306,8 +307,9 @@ static void adjust_led_value(uint32_t key)
         if(value < 1) value = 1;
         if(value > 5) value = 5;
         if(value != led_intensity) {
-            led_intensity = (uint8_t)value;
-            activate_led_mode();
+            if(led_set_state(led_modes[led_active], (uint8_t)value, led_speed) == 0)
+                led_intensity = (uint8_t)value;
+            update_led_visual();
         }
         return;
     }
@@ -317,8 +319,9 @@ static void adjust_led_value(uint32_t key)
         if(value < 1) value = 1;
         if(value > 5) value = 5;
         if(value != led_speed) {
-            led_speed = (uint8_t)value;
-            activate_led_mode();
+            if(led_set_state(led_modes[led_active], led_intensity, (uint8_t)value) == 0)
+                led_speed = (uint8_t)value;
+            update_led_visual();
         }
     }
 }
@@ -567,6 +570,7 @@ static void create_led_ui(void)
     led_mode_label = make_label(led_ring, "RAINBOW", &lv_font_montserrat_14, UI_TEXT);
     lv_obj_set_width(led_mode_label, 100);
     lv_obj_set_style_text_align(led_mode_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(led_mode_label, LV_LABEL_LONG_CLIP);
     lv_obj_center(led_mode_label);
 
     led_index_label = make_label(led_panel, "1 / 5", &lv_font_montserrat_12, UI_MUTED);
@@ -586,7 +590,7 @@ static void create_led_ui(void)
     lv_obj_set_style_border_width(led_intensity_box, 1, 0);
     lv_obj_set_style_border_color(led_intensity_box, lv_color_hex(0x23435A), 0);
     lv_obj_set_style_pad_all(led_intensity_box, 0, 0);
-    led_intensity_label = make_label(led_intensity_box, "亮度  3/5", &s1_led_font_12, UI_TEXT);
+    led_intensity_label = make_label(led_intensity_box, "亮度：3/5", &s1_led_font_12, UI_TEXT);
     lv_obj_center(led_intensity_label);
 
     led_speed_box = lv_obj_create(led_panel);
@@ -598,7 +602,7 @@ static void create_led_ui(void)
     lv_obj_set_style_border_width(led_speed_box, 1, 0);
     lv_obj_set_style_border_color(led_speed_box, lv_color_hex(0x23435A), 0);
     lv_obj_set_style_pad_all(led_speed_box, 0, 0);
-    led_speed_label = make_label(led_speed_box, "速度  3/5", &s1_led_font_12, UI_TEXT);
+    led_speed_label = make_label(led_speed_box, "速度：3/5", &s1_led_font_12, UI_TEXT);
     lv_obj_center(led_speed_label);
 }
 

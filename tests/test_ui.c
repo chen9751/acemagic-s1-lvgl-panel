@@ -1,7 +1,11 @@
 #include "ui/s1_ui.h"
 #include "ui/ui_router.h"
 #include "ui/pages/ui_home_overlay.h"
+#include "ui/pages/ui_music_v2.h"
+#include "ui/ui_second_pass.h"
+#include "input/s1_input_dispatch.h"
 LV_FONT_DECLARE(s1_nunito_extrabold_108);
+LV_FONT_DECLARE(s1_led_font_12);
 #include "services/ha_client.h"
 #include "services/led_client.h"
 #include <assert.h>
@@ -16,7 +20,11 @@ int ha_set_light_brightness(const char *entity, int value) { return service(enti
 int ha_set_light_color_temperature(const char *entity, int value) { return service(entity, "temperature", value); }
 int ha_set_light_power(const char *entity, int on) { return service(entity, "power", on); }
 int ha_get_light_state(const char *entity, ha_light_state_t *state) { (void)entity; (void)state; return -1; }
-int led_set_mode(led_mode_t mode) { (void)mode; led_calls++; return 0; }
+static led_mode_t last_mode;
+static int last_intensity, last_speed;
+int led_set_state(led_mode_t mode, uint8_t intensity, uint8_t speed)
+{ led_calls++; last_mode = mode; last_intensity = intensity; last_speed = speed; return fail_service ? -1 : 0; }
+int ha_toggle(const char *entity) { return service(entity, "toggle", 0); }
 static void music(s1_music_action_t action, void *data)
 { (void)data; music_calls++; last_action = action; }
 static lv_obj_t *label(lv_obj_t *obj, const char *text)
@@ -40,7 +48,7 @@ static void visible(const char *text) { assert(label(lv_screen_active(), text));
 static void go(s1_page_id_t page)
 {
     s1_ui_key(LV_KEY_HOME);
-    for(int i = 0; i < 8 && s1_ui_router_current() != page; i++) s1_ui_key(LV_KEY_RIGHT);
+    for(int i = 0; i < 8 && s1_ui_router_current() != page; i++) s1_ui_key(LV_KEY_DOWN);
     assert(s1_ui_router_current() == page);
 }
 static unsigned char pixels[170 * 320 * 3];
@@ -118,72 +126,85 @@ int main(void)
     s1_ui_init();
     s1_ui_music_set_action_cb(music, NULL);
     snapshot("home.ppm");
-    const s1_page_id_t ring[] = { S1_PAGE_AC, S1_PAGE_BATH, S1_PAGE_CURTAIN, S1_PAGE_HOME,
-        S1_PAGE_LIGHT_LIVING, S1_PAGE_LIGHT_STUDY, S1_PAGE_LIGHT_BEDROOM, S1_PAGE_LIGHT_SMALL_BEDROOM };
-    go(S1_PAGE_AC);
-    for(int round = 0; round < 2; round++) for(int i = 0; i < 8; i++) {
-        assert(s1_ui_router_current() == ring[i]); s1_ui_key(LV_KEY_RIGHT);
+    s1_ui_music_v2_init();
+    s1_ui_second_pass_init();
+    for(int round = 0; round < 2; round++) {
+        for(int i = 1; i <= 4; i++) {
+            s1_input_dispatch_key(LV_KEY_DOWN);
+            assert(s1_ui_router_current() == (s1_page_id_t)(i % 4));
+        }
     }
-    for(int i = 7; i >= 0; i--) { s1_ui_key(LV_KEY_LEFT); assert(s1_ui_router_current() == ring[i]); }
-    for(int i = 0; i < 8; i++) if(ring[i] != S1_PAGE_HOME) {
-        go(ring[i]); int before = calls;
-        s1_ui_key(LV_KEY_UP); s1_ui_key(LV_KEY_DOWN);
-        assert(s1_ui_router_current() == ring[i] && calls == before);
+    go(S1_PAGE_HA);
+    const char *names[] = { "客厅灯", "书房灯", "卧室灯", "小卧室灯", "空调", "窗帘", "浴霸" };
+    for(int i = 0; i < 7; i++) {
+        visible(names[i]); visible("MENU  ENTER DEVICE");
+        snapshot("ha.ppm");
+        s1_input_dispatch_key(LV_KEY_RIGHT);
     }
-    go(S1_PAGE_AC); visible("空调"); visible("Coming soon"); snapshot("placeholder.ppm");
-    const char *entities[] = { "light.yeelink_ceil40_9771_light", "light.yeelink_ceil40_d8b6_light",
-        "light.yeelink_ceiling17_b415_light", "light.yeelink_ceiling17_40d7_light" };
     for(int i = 0; i < 4; i++) {
-        s1_page_id_t page = (s1_page_id_t)(S1_PAGE_LIGHT_LIVING + i);
-        go(page); visible("OFF"); assert(bars(lv_screen_active()) == 0);
-        int before = calls;
-        s1_ui_key(S1_KEY_MENU); s1_ui_key(S1_KEY_VOL_UP); s1_ui_key(S1_KEY_VOL_DOWN);
-        assert(calls == before);
-        if(i == 0) snapshot("light-off.ppm");
-        fail_service = 1; s1_ui_key(LV_KEY_ENTER); visible("OFF"); visible("Command failed");
-        fail_service = 0; s1_ui_key(LV_KEY_ENTER); visible("亮度"); visible("50%");
-        assert(strcmp(last_entity, entities[i]) == 0 && strcmp(last_service, "brightness") == 0);
-        assert(bars(lv_screen_active()) == 1);
-        if(i == 0) snapshot("light-brightness.ppm");
-        before = calls; s1_ui_key(S1_KEY_VOL_UP); s1_ui_key(S1_KEY_VOL_DOWN); assert(calls == before);
-        fail_service = 1; s1_ui_key(LV_KEY_UP); visible("50%");
+        s1_input_dispatch_key(S1_KEY_MENU);
+        assert(s1_ui_router_is_light_page(s1_ui_router_current()));
+        visible("OFF"); assert(bars(lv_screen_active()) == 0);
+        fail_service = 1;
+        s1_input_dispatch_key(LV_KEY_ENTER); visible("OFF");
         fail_service = 0;
-        for(int j = 0; j < 12; j++) s1_ui_key(LV_KEY_DOWN);
-        visible("10%"); assert(last_value == 10);
-        for(int j = 0; j < 12; j++) s1_ui_key(LV_KEY_UP);
-        visible("100%"); assert(last_value == 100);
-        s1_ui_key(S1_KEY_MENU); visible("色温"); visible("4600K");
-        if(i == 0) snapshot("light-temperature.ppm");
-        for(int j = 0; j < 12; j++) s1_ui_key(LV_KEY_DOWN);
-        visible("2700K"); assert(last_value == 2700 && strcmp(last_service, "temperature") == 0);
-        for(int j = 0; j < 12; j++) s1_ui_key(LV_KEY_UP);
-        visible("6500K"); assert(last_value == 6500);
-        before = calls;
-        s1_ui_key(LV_KEY_RIGHT); s1_ui_key(LV_KEY_LEFT);
-        assert(s1_ui_router_current() == page); visible("亮度"); visible("100%"); assert(calls == before);
-        s1_ui_key(S1_KEY_MENU); visible("色温"); visible("6500K");
-        fail_service = 1; s1_ui_key(LV_KEY_ENTER); visible("6500K");
-        fail_service = 0; s1_ui_key(LV_KEY_ENTER); visible("OFF");
-        assert(strcmp(last_service, "power") == 0 && last_value == 0);
-        s1_ui_key(LV_KEY_ENTER); visible("亮度"); visible("100%");
-        s1_ui_key(LV_KEY_ENTER); visible("OFF");
+        go(S1_PAGE_HA); s1_input_dispatch_key(LV_KEY_RIGHT);
     }
-    go(S1_PAGE_HOME); s1_ui_key(LV_KEY_UP); assert(s1_ui_router_current() == S1_PAGE_LED);
-    s1_ui_key(LV_KEY_LEFT); s1_ui_key(LV_KEY_RIGHT); assert(s1_ui_router_current() == S1_PAGE_LED);
-    s1_ui_key(LV_KEY_DOWN); s1_ui_key(LV_KEY_ENTER); assert(led_calls == 1);
-    snapshot("led.ppm");
-    s1_ui_key(LV_KEY_ESC); assert(s1_ui_router_current() == S1_PAGE_HOME);
-    s1_ui_key(LV_KEY_DOWN); assert(s1_ui_router_current() == S1_PAGE_MUSIC);
-    snapshot("music.ppm");
-    lv_tick_inc(500); /* Current Music entry guard lasts 450 ms. */
-    s1_ui_key(LV_KEY_ENTER); s1_ui_key(LV_KEY_LEFT); assert(last_action == S1_MUSIC_ACTION_PREVIOUS);
-    s1_ui_key(LV_KEY_RIGHT); assert(last_action == S1_MUSIC_ACTION_NEXT);
-    s1_ui_key(LV_KEY_ENTER); assert(last_action == S1_MUSIC_ACTION_PLAY_PAUSE && music_calls == 4);
-    s1_ui_key(LV_KEY_ESC); assert(s1_ui_router_current() == S1_PAGE_HOME);
-    s1_ui_key(LV_KEY_DOWN); s1_ui_key(LV_KEY_ENTER); s1_ui_key(LV_KEY_HOME);
-    assert(s1_ui_router_current() == S1_PAGE_HOME);
-    for(int p = 0; p < 8; p++) { go(ring[p]); s1_ui_key(LV_KEY_HOME); assert(s1_ui_router_current() == S1_PAGE_HOME); }
-    puts("PASS: ring, branch isolation, four lights, failures, limits, volume, HOME/BACK, LED and MUSIC");
+    const uint32_t glyphs[] = {0x4eae, 0x5ea6, 0x901f, 0xff1a, '1', '5', '/'};
+    for(unsigned i = 0; i < sizeof(glyphs) / sizeof(glyphs[0]); i++) {
+        lv_font_glyph_dsc_t glyph;
+        assert(lv_font_get_glyph_dsc(&s1_led_font_12, &glyph, glyphs[i], 0));
+        assert(!glyph.is_placeholder);
+    }
+    go(S1_PAGE_LED);
+    lv_tick_inc(3000); lv_timer_handler(); visible("LED");
+    visible("亮度：3/5"); visible("速度：3/5");
+    s1_input_dispatch_key(LV_KEY_RIGHT);
+    s1_input_dispatch_key(LV_KEY_RIGHT); visible("COLOR");
+    lv_obj_update_layout(lv_screen_active());
+    lv_obj_t *mode = label(lv_screen_active(), "COLOR");
+    assert(lv_obj_get_height(mode) == lv_font_montserrat_14.line_height);
+    snapshot("led-color.ppm");
+    s1_input_dispatch_key(LV_KEY_RIGHT); visible("AUTO");
+    snapshot("led-auto.ppm");
+    int before = led_calls;
+    s1_input_dispatch_key(S1_KEY_MENU);
+    assert(led_calls == before);
+    s1_input_dispatch_key(LV_KEY_RIGHT);
+    assert(last_mode == LED_MODE_RAINBOW && last_intensity == 4);
+    visible("亮度：4/5");
+    fail_service = 1;
+    s1_input_dispatch_key(LV_KEY_RIGHT); visible("亮度：4/5");
+    fail_service = 0;
+    for(int i = 0; i < 8; i++) s1_input_dispatch_key(LV_KEY_LEFT);
+    visible("亮度：1/5");
+    for(int i = 0; i < 8; i++) s1_input_dispatch_key(LV_KEY_RIGHT);
+    visible("亮度：5/5");
+    s1_input_dispatch_key(S1_KEY_MENU);
+    s1_input_dispatch_key(LV_KEY_LEFT);
+    assert(last_speed == 2); visible("速度：2/5");
+    snapshot("led-speed.ppm");
+    s1_input_dispatch_key(S1_KEY_MENU);
+    s1_input_dispatch_key(LV_KEY_ENTER);
+    assert(last_mode == LED_MODE_AUTOMATIC);
+    s1_input_dispatch_key(LV_KEY_RIGHT); visible("OFF");
+    s1_input_dispatch_key(LV_KEY_RIGHT); visible("RAINBOW");
+    go(S1_PAGE_MUSIC);
+    assert(!label(lv_screen_active(), "PAUSED"));
+    s1_ui_music_v2_set_state(true, false);
+    visible("PAUSED");
+    snapshot("music-paused.ppm");
+    s1_ui_music_v2_set_state(true, true);
+    visible("PLAYING");
+    assert(!label(lv_screen_active(), "PAUSED"));
+    s1_input_dispatch_key(LV_KEY_LEFT); assert(last_action == S1_MUSIC_ACTION_PREVIOUS);
+    s1_input_dispatch_key(LV_KEY_RIGHT); assert(last_action == S1_MUSIC_ACTION_NEXT);
+    s1_input_dispatch_key(LV_KEY_ENTER); assert(last_action == S1_MUSIC_ACTION_PLAY_PAUSE);
+    assert(music_calls == 3);
+    s1_ui_music_v2_set_progress(50, 100);
+    snapshot("music-playing.ppm");
+    go(S1_PAGE_HOME);
+    puts("PASS: vertical navigation, HA sync, LED focus/limits/failures, Music state and dispatch");
     test_home_clock();
     lv_deinit();
     return 0;

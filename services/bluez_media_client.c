@@ -46,7 +46,13 @@ static int run_command(const char *command, char *output, size_t output_size)
         if(count == 0) break;
     }
     output[used] = '\0';
+    /* Drain excess output before waiting: a full pipe can block the child. */
+    char excess[1024];
+    bool truncated = false;
+    while(fread(excess, 1, sizeof(excess), pipe) > 0) truncated = true;
+    bool read_failed = ferror(pipe) != 0;
     int status = pclose(pipe);
+    if(truncated || read_failed) return -1;
     return status == 0 ? 0 : -1;
 }
 

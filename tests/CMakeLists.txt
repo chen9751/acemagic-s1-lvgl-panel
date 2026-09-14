@@ -11,6 +11,7 @@ set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_USE_THORVG_INTERNAL OFF CACHE BOOL "" FORCE)
 add_subdirectory("${PROJECT_SOURCE_DIR}/lvgl" "${CMAKE_CURRENT_BINARY_DIR}/lvgl")
 add_executable(s1_ui_tests test_ui.c
+    ../ui/ui_second_pass.c ../ui/pages/ui_music_v2.c
     ../ui/s1_ui.c ../ui/ui_router.c ../ui/pages/ui_page.c ../ui/pages/ui_light.c
     ../ui/fonts/s1_home_info_font_14.c ../ui/fonts/s1_home_time_font_108.c
     ../ui/fonts/s1_ui_font_14.c ../ui/fonts/s1_led_font_12.c
