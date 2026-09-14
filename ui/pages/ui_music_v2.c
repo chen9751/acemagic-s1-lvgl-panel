@@ -276,6 +276,17 @@ void s1_ui_music_v2_init(void)
     style_plain_object(status_dot);
     lv_obj_set_style_radius(status_dot, LV_RADIUS_CIRCLE, 0);
 
+    /* The legacy music UI owns a PAUSED/PLAYING label around y=154 and may
+     * make it visible again after v2 init. Cover that legacy text with a tiny
+     * static backdrop, then draw the v2 state label above it. */
+    lv_obj_t *state_backdrop = lv_obj_create(music_panel);
+    lv_obj_set_size(state_backdrop, 150, 24);
+    lv_obj_set_pos(state_backdrop, 10, 144);
+    style_plain_object(state_backdrop);
+    lv_obj_set_style_radius(state_backdrop, 0, 0);
+    lv_obj_set_style_bg_color(state_backdrop, lv_color_hex(0x02080D), 0);
+    lv_obj_set_style_bg_opa(state_backdrop, LV_OPA_COVER, 0);
+
     state_label = lv_label_create(music_panel);
     lv_obj_set_width(state_label, 150);
     lv_obj_set_pos(state_label, 10, 148);
