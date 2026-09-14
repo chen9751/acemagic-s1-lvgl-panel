@@ -1,0 +1,85 @@
+name: Patch LED menu controls
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/patch-led-menu.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch LED page behavior
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('ui/s1_ui.c')
+          s = p.read_text()
+
+          s = s.replace('LV_FONT_DECLARE(s1_nunito_extrabold_108);',
+                        'LV_FONT_DECLARE(s1_nunito_extrabold_108);\nLV_FONT_DECLARE(s1_ui_font_14);')
+
+          s = s.replace('static lv_obj_t *led_intensity_label;\nstatic lv_obj_t *led_speed_label;',
+                        'static lv_obj_t *led_intensity_box;\nstatic lv_obj_t *led_speed_box;\nstatic lv_obj_t *led_intensity_label;\nstatic lv_obj_t *led_speed_label;')
+
+          s = s.replace('static uint8_t led_intensity = 3;\nstatic uint8_t led_speed = 3;',
+                        'static uint8_t led_intensity = 3;\nstatic uint8_t led_speed = 3;\n/* 0 = mode, 1 = brightness, 2 = speed */\nstatic uint8_t led_adjust_target;')
+
+          old = '''    snprintf(text, sizeof(text), "POWER  %u/5", (unsigned)led_intensity);\n    set_label_text_if_changed(led_intensity_label, text);\n    snprintf(text, sizeof(text), "SPEED  %u/5", (unsigned)led_speed);\n    set_label_text_if_changed(led_speed_label, text);\n'''
+          new = '''    snprintf(text, sizeof(text), "亮度  %u/5", (unsigned)led_intensity);\n    set_label_text_if_changed(led_intensity_label, text);\n    snprintf(text, sizeof(text), "速度  %u/5", (unsigned)led_speed);\n    set_label_text_if_changed(led_speed_label, text);\n\n    lv_obj_set_style_border_color(led_intensity_box,\n                                  lv_color_hex(led_adjust_target == 1 ? UI_BLUE : 0x23435A), 0);\n    lv_obj_set_style_border_width(led_intensity_box, led_adjust_target == 1 ? 2 : 1, 0);\n    lv_obj_set_style_text_color(led_intensity_label,\n                                lv_color_hex(led_adjust_target == 1 ? UI_BLUE : UI_TEXT), 0);\n    lv_obj_set_style_border_color(led_speed_box,\n                                  lv_color_hex(led_adjust_target == 2 ? UI_BLUE : 0x23435A), 0);\n    lv_obj_set_style_border_width(led_speed_box, led_adjust_target == 2 ? 2 : 1, 0);\n    lv_obj_set_style_text_color(led_speed_label,\n                                lv_color_hex(led_adjust_target == 2 ? UI_BLUE : UI_TEXT), 0);\n'''
+          if old not in s:
+              raise SystemExit('update_led_visual block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    lv_obj_t *box1 = lv_obj_create(led_panel);\n    lv_obj_set_size(box1, 71, 67);\n    lv_obj_set_pos(box1, 10, 183);\n    lv_obj_set_scrollable(box1, false);\n    lv_obj_set_style_radius(box1, 12, 0);\n    lv_obj_set_style_bg_color(box1, lv_color_hex(UI_CARD), 0);\n    lv_obj_set_style_border_width(box1, 1, 0);\n    lv_obj_set_style_border_color(box1, lv_color_hex(0x23435A), 0);\n    lv_obj_set_style_pad_all(box1, 0, 0);\n    led_intensity_label = make_label(box1, "POWER  3/5", &lv_font_montserrat_10, UI_TEXT);\n    lv_obj_center(led_intensity_label);\n\n    lv_obj_t *box2 = lv_obj_create(led_panel);\n    lv_obj_set_size(box2, 71, 67);\n    lv_obj_set_pos(box2, 89, 183);\n    lv_obj_set_scrollable(box2, false);\n    lv_obj_set_style_radius(box2, 12, 0);\n    lv_obj_set_style_bg_color(box2, lv_color_hex(UI_CARD), 0);\n    lv_obj_set_style_border_width(box2, 1, 0);\n    lv_obj_set_style_border_color(box2, lv_color_hex(0x23435A), 0);\n    lv_obj_set_style_pad_all(box2, 0, 0);\n    led_speed_label = make_label(box2, "SPEED  3/5", &lv_font_montserrat_10, UI_TEXT);\n    lv_obj_center(led_speed_label);\n'''
+          new = '''    led_intensity_box = lv_obj_create(led_panel);\n    lv_obj_set_size(led_intensity_box, 71, 67);\n    lv_obj_set_pos(led_intensity_box, 10, 183);\n    lv_obj_set_scrollable(led_intensity_box, false);\n    lv_obj_set_style_radius(led_intensity_box, 12, 0);\n    lv_obj_set_style_bg_color(led_intensity_box, lv_color_hex(UI_CARD), 0);\n    lv_obj_set_style_border_width(led_intensity_box, 1, 0);\n    lv_obj_set_style_border_color(led_intensity_box, lv_color_hex(0x23435A), 0);\n    lv_obj_set_style_pad_all(led_intensity_box, 0, 0);\n    led_intensity_label = make_label(led_intensity_box, "亮度  3/5", &s1_ui_font_14, UI_TEXT);\n    lv_obj_center(led_intensity_label);\n\n    led_speed_box = lv_obj_create(led_panel);\n    lv_obj_set_size(led_speed_box, 71, 67);\n    lv_obj_set_pos(led_speed_box, 89, 183);\n    lv_obj_set_scrollable(led_speed_box, false);\n    lv_obj_set_style_radius(led_speed_box, 12, 0);\n    lv_obj_set_style_bg_color(led_speed_box, lv_color_hex(UI_CARD), 0);\n    lv_obj_set_style_border_width(led_speed_box, 1, 0);\n    lv_obj_set_style_border_color(led_speed_box, lv_color_hex(0x23435A), 0);\n    lv_obj_set_style_pad_all(led_speed_box, 0, 0);\n    led_speed_label = make_label(led_speed_box, "速度  3/5", &s1_ui_font_14, UI_TEXT);\n    lv_obj_center(led_speed_label);\n'''
+          if old not in s:
+              raise SystemExit('create_led_ui block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    } else if(page == S1_PAGE_LED) {\n        set_hidden(led_panel, false);\n        update_led_visual();\n'''
+          new = '''    } else if(page == S1_PAGE_LED) {\n        led_adjust_target = 0;\n        set_hidden(led_panel, false);\n        update_led_visual();\n'''
+          if old not in s:
+              raise SystemExit('LED page show block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''    if(page == S1_PAGE_LED) {\n        if(key == LV_KEY_LEFT) {\n            led_selected = (led_selected + LED_MODE_COUNT - 1) % LED_MODE_COUNT;\n            update_led_visual();\n        } else if(key == LV_KEY_RIGHT) {\n            led_selected = (led_selected + 1) % LED_MODE_COUNT;\n            update_led_visual();\n        } else if(key == LV_KEY_ENTER) activate_led_mode();\n        else if(key == S1_KEY_MENU) {\n            led_intensity++;\n            if(led_intensity > 5) led_intensity = 1;\n            activate_led_mode();\n        }\n        return;\n    }\n'''
+          new = '''    if(page == S1_PAGE_LED) {\n        if(key == S1_KEY_MENU) {\n            led_adjust_target = (uint8_t)((led_adjust_target + 1) % 3);\n            update_led_visual();\n            return;\n        }\n\n        if(key == LV_KEY_ENTER) {\n            activate_led_mode();\n            return;\n        }\n\n        if(key != LV_KEY_LEFT && key != LV_KEY_RIGHT) return;\n        int delta = key == LV_KEY_RIGHT ? 1 : -1;\n\n        if(led_adjust_target == 1) {\n            int next = (int)led_intensity + delta;\n            if(next < 1) next = 1;\n            if(next > 5) next = 5;\n            if(next != led_intensity) {\n                led_intensity = (uint8_t)next;\n                activate_led_mode();\n            }\n        } else if(led_adjust_target == 2) {\n            int next = (int)led_speed + delta;\n            if(next < 1) next = 1;\n            if(next > 5) next = 5;\n            if(next != led_speed) {\n                led_speed = (uint8_t)next;\n                activate_led_mode();\n            }\n        } else if(key == LV_KEY_LEFT) {\n            led_selected = (led_selected + LED_MODE_COUNT - 1) % LED_MODE_COUNT;\n            update_led_visual();\n        } else {\n            led_selected = (led_selected + 1) % LED_MODE_COUNT;\n            update_led_visual();\n        }\n        return;\n    }\n'''
+          if old not in s:
+              raise SystemExit('LED key block not found')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+
+      - name: Regenerate UI font with speed glyph
+        shell: bash
+        run: |
+          npx --yes lv_font_conv@1.5.3 \
+            --size 14 --bpp 4 --format lvgl --no-compress \
+            --font lvgl/scripts/built_in_font/Montserrat-Medium.ttf -r 0x20-0x7F \
+            --font lvgl/scripts/built_in_font/SourceHanSansSC-Normal.otf \
+            --symbols '关闭所有灯光客厅书房卧室床头小阳台浴空调窗帘霸盏亮度色温速' \
+            --font lvgl/scripts/built_in_font/FontAwesome5-Solid+Brands+Regular.woff \
+            -r 0xF011,0xF0EB,0xF2DC,0xF2D0,0xF593 \
+            --lv-font-name s1_ui_font_14 --lv-include lvgl/lvgl.h \
+            -o ui/fonts/s1_ui_font_14.c
+
+      - name: Commit patch and remove one-shot workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/patch-led-menu.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ui/s1_ui.c ui/fonts/s1_ui_font_14.c .github/workflows/patch-led-menu.yml
+          git commit -m 'Refine LED brightness and speed controls'
+          git push
