@@ -9,15 +9,19 @@
 #define UI_TEXT  0xF3F7FA
 
 #define HA_ICON_BULB "\xEF\x83\xAB"
+#define HA_FOOTER_TEXT "MENU  ENTER DEVICE"
 
 LV_FONT_DECLARE(s1_ui_font_14);
 
 static lv_obj_t *music_status_overlay;
+static lv_obj_t *ha_panel;
+static lv_obj_t *ha_title;
 static lv_obj_t *ha_card;
 static lv_obj_t *ha_visible_name;
 static lv_obj_t *ha_source_name;
 static lv_obj_t *ha_state;
 static lv_obj_t *ha_icon;
+static lv_obj_t *ha_hint;
 static int ha_device_index = -1;
 
 static const char *ha_names_cn[7] = {
@@ -56,6 +60,14 @@ static lv_obj_t *find_label_text(lv_obj_t *parent, const char *a, const char *b)
     return NULL;
 }
 
+static void set_label_if_needed(lv_obj_t *label, const char *text)
+{
+    if(label == NULL || text == NULL || !lv_obj_check_type(label, &lv_label_class)) return;
+    const char *old = lv_label_get_text(label);
+    if(old != NULL && strcmp(old, text) == 0) return;
+    lv_label_set_text(label, text);
+}
+
 static int detect_ha_device(void)
 {
     if(ha_source_name == NULL) return ha_device_index;
@@ -76,8 +88,8 @@ static void render_ha_device(void)
     if(next >= 0 && next < 7) ha_device_index = next;
     if(ha_device_index < 0 || ha_device_index >= 7) return;
 
-    lv_label_set_text(ha_visible_name, ha_names_cn[ha_device_index]);
-    lv_label_set_text(ha_icon, ha_icons[ha_device_index]);
+    set_label_if_needed(ha_visible_name, ha_names_cn[ha_device_index]);
+    set_label_if_needed(ha_icon, ha_icons[ha_device_index]);
 
     const char *state = lv_label_get_text(ha_state);
     bool on = state != NULL && strcmp(state, "ON") == 0;
@@ -94,10 +106,34 @@ static void render_ha_device(void)
     );
 }
 
+static void enforce_ha_chrome(void)
+{
+    if(ha_title != NULL) {
+        set_label_if_needed(ha_title, "HA");
+        lv_obj_set_style_text_font(ha_title, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_text_color(ha_title, lv_color_hex(0xC8D4DD), 0);
+        lv_obj_set_pos(ha_title, 8, 7);
+    }
+
+    if(ha_hint != NULL) {
+        set_label_if_needed(ha_hint, HA_FOOTER_TEXT);
+        lv_obj_set_width(ha_hint, 160);
+        lv_obj_set_pos(ha_hint, 5, 258);
+        lv_obj_set_style_text_align(ha_hint, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(ha_hint, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_text_color(ha_hint, lv_color_hex(UI_MUTED), 0);
+    }
+}
+
 static void ha_refresh_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
-    if(ha_card == NULL || lv_obj_is_hidden(ha_card)) return;
+    if(ha_panel == NULL || lv_obj_is_hidden(ha_panel)) return;
+
+    /* s1_ui.c updates the legacy title/footer on every page/device change.
+     * Re-apply the final HA chrome before the next display refresh so the
+     * old HOME ASSISTANT / LEFT-RIGHT / MENU FOR DETAIL variants never flash. */
+    enforce_ha_chrome();
     render_ha_device();
 }
 
@@ -106,17 +142,9 @@ static void refine_ha_panel(lv_obj_t *root)
     /* s1_ui.c creates: title, HOME, HA, LED, MUSIC ... in that order. */
     if(root == NULL || lv_obj_get_child_count(root) < 3) return;
 
-    lv_obj_t *title = lv_obj_get_child(root, 0);
-    lv_obj_t *ha_panel = lv_obj_get_child(root, 2);
+    ha_title = lv_obj_get_child(root, 0);
+    ha_panel = lv_obj_get_child(root, 2);
     if(ha_panel == NULL || lv_obj_get_child_count(ha_panel) < 6) return;
-
-    /* Keep the global clock clear: compact the page title to a small HA mark. */
-    if(title != NULL && lv_obj_check_type(title, &lv_label_class)) {
-        lv_label_set_text(title, "HA");
-        lv_obj_set_style_text_font(title, &lv_font_montserrat_10, 0);
-        lv_obj_set_style_text_color(title, lv_color_hex(0xC8D4DD), 0);
-        lv_obj_set_pos(title, 8, 7);
-    }
 
     lv_obj_set_size(ha_panel, 170, 292);
     lv_obj_set_pos(ha_panel, 0, 26);
@@ -126,7 +154,7 @@ static void refine_ha_panel(lv_obj_t *root)
     ha_card = lv_obj_get_child(ha_panel, 2);
     lv_obj_t *power_box = lv_obj_get_child(ha_panel, 3);
     lv_obj_t *detail_box = lv_obj_get_child(ha_panel, 4);
-    lv_obj_t *hint = lv_obj_get_child(ha_panel, 5);
+    ha_hint = lv_obj_get_child(ha_panel, 5);
 
     if(left != NULL) lv_obj_set_pos(left, 5, 106);
     if(right != NULL) lv_obj_set_pos(right, 149, 106);
@@ -151,7 +179,7 @@ static void refine_ha_panel(lv_obj_t *root)
         lv_obj_set_style_transform_scale(ha_visible_name, 330, 0);
     }
 
-    /* The old second English line is only used internally to identify selection. */
+    /* The old English line remains as an internal selection identifier only. */
     if(ha_source_name != NULL) lv_obj_add_flag(ha_source_name, LV_OBJ_FLAG_HIDDEN);
 
     if(ha_state != NULL) {
@@ -169,21 +197,16 @@ static void refine_ha_panel(lv_obj_t *root)
     lv_obj_set_style_text_font(ha_icon, &s1_ui_font_14, 0);
     lv_obj_set_style_transform_scale(ha_icon, 440, 0);
 
-    /* Remove the two bottom buttons; MENU is now the only detail-entry action. */
+    /* The final HA page has one large card and one consistent MENU hint. */
     if(power_box != NULL) lv_obj_add_flag(power_box, LV_OBJ_FLAG_HIDDEN);
     if(detail_box != NULL) lv_obj_add_flag(detail_box, LV_OBJ_FLAG_HIDDEN);
 
-    if(hint != NULL && lv_obj_check_type(hint, &lv_label_class)) {
-        lv_label_set_text(hint, "MENU  ENTER DEVICE");
-        lv_obj_set_width(hint, 160);
-        lv_obj_set_pos(hint, 5, 258);
-        lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_font(hint, &lv_font_montserrat_10, 0);
-        lv_obj_set_style_text_color(hint, lv_color_hex(UI_MUTED), 0);
-    }
-
+    enforce_ha_chrome();
     render_ha_device();
-    lv_timer_create(ha_refresh_timer_cb, 100, NULL);
+
+    /* 20 ms is shorter than the normal LVGL display refresh interval. This
+     * prevents transient legacy text from reaching the panel after key events. */
+    lv_timer_create(ha_refresh_timer_cb, 20, NULL);
 }
 
 static void refine_music_panel(lv_obj_t *root)
