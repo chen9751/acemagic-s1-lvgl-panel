@@ -73,7 +73,6 @@ static void apply_state_visual(void)
 {
     if(note_label == NULL || progress_fill == NULL) return;
 
-    /* Keep one blue identity. State changes only touch compact dynamic items. */
     lv_obj_set_style_bg_color(status_dot,
                               lv_color_hex(media_present ? MUSIC_BLUE : MUSIC_GRAY), 0);
 
@@ -143,15 +142,11 @@ static lv_obj_t *find_routed_music_panel(void)
 
 static lv_obj_t *make_lock_icon(lv_obj_t *parent)
 {
-    /* The legacy music page still toggles its old LOCK text when locking.
-     * Use this small opaque patch as the v2 lock container so that old text is
-     * fully covered, while the visible indicator remains icon-only. */
     lv_obj_t *root = lv_obj_create(parent);
-    lv_obj_set_size(root, 42, 22);
-    lv_obj_set_pos(root, 4, 0);
+    lv_obj_set_size(root, 24, 22);
+    lv_obj_set_pos(root, 7, 0);
     style_plain_object(root);
-    lv_obj_set_style_bg_color(root, lv_color_hex(MUSIC_DARK), 0);
-    lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_opa(root, LV_OPA_TRANSP, 0);
 
     lv_obj_t *shackle = lv_obj_create(root);
     lv_obj_set_size(shackle, 10, 9);
@@ -183,7 +178,6 @@ static lv_obj_t *make_lock_icon(lv_obj_t *parent)
 
 void s1_ui_music_v2_sync_visibility(void)
 {
-    /* The routed panel is shown/hidden by s1_ui.c. */
 }
 
 void s1_ui_music_v2_init(void)
@@ -193,10 +187,19 @@ void s1_ui_music_v2_init(void)
     music_panel = find_routed_music_panel();
     if(music_panel == NULL) return;
 
-    /* Preserve legacy objects because s1_ui.c still owns their pointers. */
+    /* Keep every legacy music widget alive for s1_ui.c, but move them under a
+     * permanently hidden parent. This prevents legacy LOCK/PAUSED/controls from
+     * becoming visible again when old update functions touch their flags. */
     uint32_t old_count = lv_obj_get_child_count(music_panel);
+    lv_obj_t *legacy_holder = lv_obj_create(music_panel);
+    lv_obj_set_size(legacy_holder, 1, 1);
+    style_plain_object(legacy_holder);
+    lv_obj_set_style_bg_opa(legacy_holder, LV_OPA_TRANSP, 0);
+    lv_obj_add_flag(legacy_holder, LV_OBJ_FLAG_HIDDEN);
     for(uint32_t i = 0; i < old_count; i++) {
-        lv_obj_add_flag(lv_obj_get_child(music_panel, (int32_t)i), LV_OBJ_FLAG_HIDDEN);
+        lv_obj_t *child = lv_obj_get_child(music_panel, 0);
+        if(child == NULL || child == legacy_holder) break;
+        lv_obj_set_parent(child, legacy_holder);
     }
 
     lv_obj_set_size(music_panel, 170, 290);
@@ -210,10 +213,6 @@ void s1_ui_music_v2_init(void)
     lock_icon = make_lock_icon(music_panel);
     lv_obj_add_flag(lock_icon, LV_OBJ_FLAG_HIDDEN);
 
-    /* The compact player references we checked all give the artwork one clear
-     * focal point and generous breathing room. Here the record is slightly
-     * smaller and lower than the previous version so it does not crowd the
-     * global MUSIC/time header. Every object in this block stays static. */
     status_card = lv_obj_create(music_panel);
     lv_obj_set_size(status_card, 108, 108);
     lv_obj_set_pos(status_card, 31, 29);
@@ -256,8 +255,6 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_text_color(note_label, lv_color_hex(MUSIC_DARK), 0);
     lv_obj_center(note_label);
 
-    /* A tiny static equalizer detail gives the disc a music identity without
-     * any animation or recurring invalidation. */
     const int heights[5] = { 4, 8, 11, 7, 4 };
     for(int i = 0; i < 5; i++) {
         wave_bars[i] = lv_obj_create(status_card);
@@ -269,23 +266,11 @@ void s1_ui_music_v2_init(void)
         lv_obj_set_style_bg_opa(wave_bars[i], LV_OPA_60, 0);
     }
 
-    /* Small status dot sits on the disc edge rather than floating outside it. */
     status_dot = lv_obj_create(status_card);
     lv_obj_set_size(status_dot, 6, 6);
     lv_obj_set_pos(status_dot, 89, 13);
     style_plain_object(status_dot);
     lv_obj_set_style_radius(status_dot, LV_RADIUS_CIRCLE, 0);
-
-    /* The legacy music UI owns a PAUSED/PLAYING label around y=154 and may
-     * make it visible again after v2 init. Cover that legacy text with a tiny
-     * static backdrop, then draw the v2 state label above it. */
-    lv_obj_t *state_backdrop = lv_obj_create(music_panel);
-    lv_obj_set_size(state_backdrop, 150, 24);
-    lv_obj_set_pos(state_backdrop, 10, 144);
-    style_plain_object(state_backdrop);
-    lv_obj_set_style_radius(state_backdrop, 0, 0);
-    lv_obj_set_style_bg_color(state_backdrop, lv_color_hex(0x02080D), 0);
-    lv_obj_set_style_bg_opa(state_backdrop, LV_OPA_COVER, 0);
 
     state_label = lv_label_create(music_panel);
     lv_obj_set_width(state_label, 150);
@@ -317,7 +302,6 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_radius(progress_thumb, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(progress_thumb, lv_color_hex(MUSIC_BLUE), 0);
 
-    /* Side controls remain icon-only and move farther from the center button. */
     buttons[0] = make_button(0, 14, 222, 34, LV_SYMBOL_PREV);
     buttons[1] = make_button(1, 60, 212, 50, LV_SYMBOL_PLAY);
     buttons[2] = make_button(2, 122, 222, 34, LV_SYMBOL_NEXT);
@@ -332,7 +316,6 @@ void s1_ui_music_v2_init(void)
 void s1_ui_music_v2_set_state(bool has_media, bool is_playing)
 {
     bool new_playing = has_media && is_playing;
-
     if(state_initialized && media_present == has_media && playing == new_playing) return;
 
     media_present = has_media;
@@ -353,7 +336,6 @@ void s1_ui_music_v2_set_progress(uint32_t elapsed_seconds, uint32_t duration_sec
         if(bucket > 100) bucket = 100;
     }
 
-    /* The only continuous media redraw remains this narrow progress region. */
     if(bucket == progress_bucket) return;
     progress_bucket = bucket;
 
