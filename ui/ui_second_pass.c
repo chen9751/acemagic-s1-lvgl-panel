@@ -17,9 +17,10 @@ static lv_obj_t *music_status_overlay;
 static lv_obj_t *ha_panel;
 static lv_obj_t *ha_title;
 static lv_obj_t *ha_card;
-static lv_obj_t *ha_visible_name;
+static lv_obj_t *ha_legacy_short;
 static lv_obj_t *ha_source_name;
 static lv_obj_t *ha_state;
+static lv_obj_t *ha_name_overlay;
 static lv_obj_t *ha_icon;
 static lv_obj_t *ha_hint;
 static int ha_device_index = -1;
@@ -82,13 +83,13 @@ static int detect_ha_device(void)
 
 static void render_ha_device(void)
 {
-    if(ha_visible_name == NULL || ha_icon == NULL || ha_state == NULL) return;
+    if(ha_name_overlay == NULL || ha_icon == NULL || ha_state == NULL) return;
 
     int next = detect_ha_device();
     if(next >= 0 && next < 7) ha_device_index = next;
     if(ha_device_index < 0 || ha_device_index >= 7) return;
 
-    set_label_if_needed(ha_visible_name, ha_names_cn[ha_device_index]);
+    set_label_if_needed(ha_name_overlay, ha_names_cn[ha_device_index]);
     set_label_if_needed(ha_icon, ha_icons[ha_device_index]);
 
     const char *state = lv_label_get_text(ha_state);
@@ -109,7 +110,9 @@ static void render_ha_device(void)
 static void enforce_ha_chrome(void)
 {
     if(ha_title != NULL) {
-        set_label_if_needed(ha_title, "HA");
+        /* Keep the real page name. The legacy UI already writes the same text,
+         * so there is no title race when switching devices. */
+        set_label_if_needed(ha_title, "HOME ASSISTANT");
         lv_obj_set_style_text_font(ha_title, &lv_font_montserrat_10, 0);
         lv_obj_set_style_text_color(ha_title, lv_color_hex(0xC8D4DD), 0);
         lv_obj_set_pos(ha_title, 8, 7);
@@ -130,9 +133,6 @@ static void ha_refresh_timer_cb(lv_timer_t *timer)
     (void)timer;
     if(ha_panel == NULL || lv_obj_is_hidden(ha_panel)) return;
 
-    /* s1_ui.c updates the legacy title/footer on every page/device change.
-     * Re-apply the final HA chrome before the next display refresh so the
-     * old HOME ASSISTANT / LEFT-RIGHT / MENU FOR DETAIL variants never flash. */
     enforce_ha_chrome();
     render_ha_device();
 }
@@ -166,36 +166,44 @@ static void refine_ha_panel(lv_obj_t *root)
     lv_obj_set_style_border_width(ha_card, 2, 0);
     lv_obj_set_style_border_color(ha_card, lv_color_hex(UI_BLUE), 0);
 
-    ha_visible_name = lv_obj_get_child(ha_card, 0);
+    ha_legacy_short = lv_obj_get_child(ha_card, 0);
     ha_source_name = lv_obj_get_child(ha_card, 1);
     ha_state = lv_obj_get_child(ha_card, 2);
 
-    if(ha_visible_name != NULL) {
-        lv_obj_set_width(ha_visible_name, 134);
-        lv_obj_set_style_text_align(ha_visible_name, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_font(ha_visible_name, &s1_ui_font_14, 0);
-        lv_obj_set_style_text_color(ha_visible_name, lv_color_hex(UI_TEXT), 0);
-        lv_obj_set_style_transform_scale(ha_visible_name, 400, 0);
-        lv_obj_align(ha_visible_name, LV_ALIGN_TOP_MID, 0, 24);
-    }
-
-    /* The old English line remains as an internal selection identifier only. */
+    /* Do not reuse the legacy short-name label for the visible Chinese name.
+     * s1_ui.c rewrites that object immediately on LEFT/RIGHT, which caused the
+     * visible jump. Keep both legacy labels hidden and render a stable overlay. */
+    if(ha_legacy_short != NULL) lv_obj_add_flag(ha_legacy_short, LV_OBJ_FLAG_HIDDEN);
     if(ha_source_name != NULL) lv_obj_add_flag(ha_source_name, LV_OBJ_FLAG_HIDDEN);
 
-    if(ha_state != NULL) {
-        lv_obj_set_width(ha_state, 134);
-        lv_obj_set_style_text_align(ha_state, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_font(ha_state, &lv_font_montserrat_20, 0);
-        lv_obj_set_style_transform_scale(ha_state, 420, 0);
-        lv_obj_align(ha_state, LV_ALIGN_TOP_MID, 0, 158);
-    }
+    ha_name_overlay = lv_label_create(ha_card);
+    lv_obj_set_size(ha_name_overlay, 140, 22);
+    lv_obj_set_pos(ha_name_overlay, 0, 31);
+    lv_obj_set_style_text_align(ha_name_overlay, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(ha_name_overlay, &s1_ui_font_14, 0);
+    lv_obj_set_style_text_color(ha_name_overlay, lv_color_hex(UI_TEXT), 0);
+    lv_obj_set_style_transform_pivot_x(ha_name_overlay, 70, 0);
+    lv_obj_set_style_transform_pivot_y(ha_name_overlay, 11, 0);
+    lv_obj_set_style_transform_scale(ha_name_overlay, 390, 0);
 
     ha_icon = lv_label_create(ha_card);
-    lv_obj_set_width(ha_icon, 134);
+    lv_obj_set_size(ha_icon, 140, 24);
+    lv_obj_set_pos(ha_icon, 0, 91);
     lv_obj_set_style_text_align(ha_icon, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(ha_icon, &s1_ui_font_14, 0);
-    lv_obj_set_style_transform_scale(ha_icon, 600, 0);
-    lv_obj_align(ha_icon, LV_ALIGN_TOP_MID, 0, 82);
+    lv_obj_set_style_transform_pivot_x(ha_icon, 70, 0);
+    lv_obj_set_style_transform_pivot_y(ha_icon, 12, 0);
+    lv_obj_set_style_transform_scale(ha_icon, 520, 0);
+
+    if(ha_state != NULL) {
+        lv_obj_set_size(ha_state, 140, 28);
+        lv_obj_set_pos(ha_state, 0, 158);
+        lv_obj_set_style_text_align(ha_state, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(ha_state, &lv_font_montserrat_20, 0);
+        lv_obj_set_style_transform_pivot_x(ha_state, 70, 0);
+        lv_obj_set_style_transform_pivot_y(ha_state, 14, 0);
+        lv_obj_set_style_transform_scale(ha_state, 360, 0);
+    }
 
     /* The final HA page has one large card and one consistent MENU hint. */
     if(power_box != NULL) lv_obj_add_flag(power_box, LV_OBJ_FLAG_HIDDEN);
@@ -204,8 +212,8 @@ static void refine_ha_panel(lv_obj_t *root)
     enforce_ha_chrome();
     render_ha_device();
 
-    /* 20 ms is shorter than the normal LVGL display refresh interval. This
-     * prevents transient legacy text from reaching the panel after key events. */
+    /* The overlay name is never touched by the legacy key handler, so the
+     * timer only needs to pick up the selected-device id and HA state. */
     lv_timer_create(ha_refresh_timer_cb, 20, NULL);
 }
 
