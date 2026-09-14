@@ -28,6 +28,7 @@
 #define MUSIC_ICON_NEXT     "\xEF\x81\x91"
 
 LV_FONT_DECLARE(s1_nunito_extrabold_108);
+LV_FONT_DECLARE(s1_led_font_12);
 
 static const char *weekday_names[] = {
     "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"
@@ -84,6 +85,8 @@ static lv_obj_t *ha_hint_label;
 static lv_obj_t *led_ring;
 static lv_obj_t *led_mode_label;
 static lv_obj_t *led_index_label;
+static lv_obj_t *led_intensity_box;
+static lv_obj_t *led_speed_box;
 static lv_obj_t *led_intensity_label;
 static lv_obj_t *led_speed_label;
 
@@ -99,6 +102,7 @@ static int ha_selected;
 static int light_on_cache[4] = { -1, -1, -1, -1 };
 static int led_selected;
 static int led_active;
+static int led_adjust_target;
 static uint8_t led_intensity = 3;
 static uint8_t led_speed = 3;
 static bool music_playing;
@@ -121,6 +125,9 @@ static const char *led_mode_names[] = {
 };
 
 #define LED_MODE_COUNT 5
+#define LED_ADJUST_MODE 0
+#define LED_ADJUST_INTENSITY 1
+#define LED_ADJUST_SPEED 2
 
 static void set_hidden(lv_obj_t *obj, bool hidden)
 {
@@ -261,17 +268,26 @@ static void update_led_visual(void)
 {
     bool off = led_modes[led_selected] == LED_MODE_OFF;
     set_label_text_if_changed(led_mode_label, led_mode_names[led_selected]);
-    char text[20];
+    char text[24];
     snprintf(text, sizeof(text), "%d / %d", led_selected + 1, LED_MODE_COUNT);
     set_label_text_if_changed(led_index_label, text);
 
     uint32_t ring_color = off ? UI_OFF : (led_selected == led_active ? UI_BLUE : 0x875CFF);
     lv_obj_set_style_border_color(led_ring, lv_color_hex(ring_color), 0);
 
-    snprintf(text, sizeof(text), "POWER  %u/5", (unsigned)led_intensity);
+    snprintf(text, sizeof(text), "亮度  %u/5", (unsigned)led_intensity);
     set_label_text_if_changed(led_intensity_label, text);
-    snprintf(text, sizeof(text), "SPEED  %u/5", (unsigned)led_speed);
+    snprintf(text, sizeof(text), "速度  %u/5", (unsigned)led_speed);
     set_label_text_if_changed(led_speed_label, text);
+
+    bool intensity_selected = led_adjust_target == LED_ADJUST_INTENSITY;
+    bool speed_selected = led_adjust_target == LED_ADJUST_SPEED;
+    lv_obj_set_style_border_width(led_intensity_box, intensity_selected ? 2 : 1, 0);
+    lv_obj_set_style_border_color(led_intensity_box, lv_color_hex(intensity_selected ? UI_BLUE : 0x23435A), 0);
+    lv_obj_set_style_border_width(led_speed_box, speed_selected ? 2 : 1, 0);
+    lv_obj_set_style_border_color(led_speed_box, lv_color_hex(speed_selected ? UI_BLUE : 0x23435A), 0);
+    lv_obj_set_style_text_color(led_intensity_label, lv_color_hex(intensity_selected ? UI_BLUE : UI_TEXT), 0);
+    lv_obj_set_style_text_color(led_speed_label, lv_color_hex(speed_selected ? UI_BLUE : UI_TEXT), 0);
 }
 
 static void activate_led_mode(void)
@@ -279,6 +295,31 @@ static void activate_led_mode(void)
     if(led_set_state(led_modes[led_selected], led_intensity, led_speed) == 0) {
         led_active = led_selected;
         update_led_visual();
+    }
+}
+
+static void adjust_led_value(uint32_t key)
+{
+    int delta = key == LV_KEY_RIGHT ? 1 : -1;
+    if(led_adjust_target == LED_ADJUST_INTENSITY) {
+        int value = (int)led_intensity + delta;
+        if(value < 1) value = 1;
+        if(value > 5) value = 5;
+        if(value != led_intensity) {
+            led_intensity = (uint8_t)value;
+            activate_led_mode();
+        }
+        return;
+    }
+
+    if(led_adjust_target == LED_ADJUST_SPEED) {
+        int value = (int)led_speed + delta;
+        if(value < 1) value = 1;
+        if(value > 5) value = 5;
+        if(value != led_speed) {
+            led_speed = (uint8_t)value;
+            activate_led_mode();
+        }
     }
 }
 
@@ -318,6 +359,7 @@ static void update_page(void)
         refresh_light_states(true);
         update_ha_visual();
     } else if(page == S1_PAGE_LED) {
+        led_adjust_target = LED_ADJUST_MODE;
         set_hidden(led_panel, false);
         update_led_visual();
     } else if(page == S1_PAGE_MUSIC) {
@@ -535,28 +577,28 @@ static void create_led_ui(void)
     lv_obj_t *right = make_label(led_panel, ">", &lv_font_montserrat_24, 0xBED7E8);
     lv_obj_set_pos(right, 145, 68);
 
-    lv_obj_t *box1 = lv_obj_create(led_panel);
-    lv_obj_set_size(box1, 71, 67);
-    lv_obj_set_pos(box1, 10, 183);
-    lv_obj_set_scrollable(box1, false);
-    lv_obj_set_style_radius(box1, 12, 0);
-    lv_obj_set_style_bg_color(box1, lv_color_hex(UI_CARD), 0);
-    lv_obj_set_style_border_width(box1, 1, 0);
-    lv_obj_set_style_border_color(box1, lv_color_hex(0x23435A), 0);
-    lv_obj_set_style_pad_all(box1, 0, 0);
-    led_intensity_label = make_label(box1, "POWER  3/5", &lv_font_montserrat_10, UI_TEXT);
+    led_intensity_box = lv_obj_create(led_panel);
+    lv_obj_set_size(led_intensity_box, 71, 67);
+    lv_obj_set_pos(led_intensity_box, 10, 183);
+    lv_obj_set_scrollable(led_intensity_box, false);
+    lv_obj_set_style_radius(led_intensity_box, 12, 0);
+    lv_obj_set_style_bg_color(led_intensity_box, lv_color_hex(UI_CARD), 0);
+    lv_obj_set_style_border_width(led_intensity_box, 1, 0);
+    lv_obj_set_style_border_color(led_intensity_box, lv_color_hex(0x23435A), 0);
+    lv_obj_set_style_pad_all(led_intensity_box, 0, 0);
+    led_intensity_label = make_label(led_intensity_box, "亮度  3/5", &s1_led_font_12, UI_TEXT);
     lv_obj_center(led_intensity_label);
 
-    lv_obj_t *box2 = lv_obj_create(led_panel);
-    lv_obj_set_size(box2, 71, 67);
-    lv_obj_set_pos(box2, 89, 183);
-    lv_obj_set_scrollable(box2, false);
-    lv_obj_set_style_radius(box2, 12, 0);
-    lv_obj_set_style_bg_color(box2, lv_color_hex(UI_CARD), 0);
-    lv_obj_set_style_border_width(box2, 1, 0);
-    lv_obj_set_style_border_color(box2, lv_color_hex(0x23435A), 0);
-    lv_obj_set_style_pad_all(box2, 0, 0);
-    led_speed_label = make_label(box2, "SPEED  3/5", &lv_font_montserrat_10, UI_TEXT);
+    led_speed_box = lv_obj_create(led_panel);
+    lv_obj_set_size(led_speed_box, 71, 67);
+    lv_obj_set_pos(led_speed_box, 89, 183);
+    lv_obj_set_scrollable(led_speed_box, false);
+    lv_obj_set_style_radius(led_speed_box, 12, 0);
+    lv_obj_set_style_bg_color(led_speed_box, lv_color_hex(UI_CARD), 0);
+    lv_obj_set_style_border_width(led_speed_box, 1, 0);
+    lv_obj_set_style_border_color(led_speed_box, lv_color_hex(0x23435A), 0);
+    lv_obj_set_style_pad_all(led_speed_box, 0, 0);
+    led_speed_label = make_label(led_speed_box, "速度  3/5", &s1_led_font_12, UI_TEXT);
     lv_obj_center(led_speed_label);
 }
 
@@ -747,18 +789,24 @@ void s1_ui_key(uint32_t key)
     }
 
     if(page == S1_PAGE_LED) {
-        if(key == LV_KEY_LEFT) {
-            led_selected = (led_selected + LED_MODE_COUNT - 1) % LED_MODE_COUNT;
+        if(key == S1_KEY_MENU) {
+            led_adjust_target = (led_adjust_target + 1) % 3;
             update_led_visual();
-        } else if(key == LV_KEY_RIGHT) {
-            led_selected = (led_selected + 1) % LED_MODE_COUNT;
-            update_led_visual();
-        } else if(key == LV_KEY_ENTER) activate_led_mode();
-        else if(key == S1_KEY_MENU) {
-            led_intensity++;
-            if(led_intensity > 5) led_intensity = 1;
-            activate_led_mode();
+            return;
         }
+
+        if(key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
+            if(led_adjust_target == LED_ADJUST_MODE) {
+                if(key == LV_KEY_LEFT) led_selected = (led_selected + LED_MODE_COUNT - 1) % LED_MODE_COUNT;
+                else led_selected = (led_selected + 1) % LED_MODE_COUNT;
+                update_led_visual();
+            } else {
+                adjust_led_value(key);
+            }
+            return;
+        }
+
+        if(key == LV_KEY_ENTER && led_adjust_target == LED_ADJUST_MODE) activate_led_mode();
         return;
     }
 
