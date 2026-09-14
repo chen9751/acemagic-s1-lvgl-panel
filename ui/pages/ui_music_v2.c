@@ -34,6 +34,8 @@ static bool media_present;
 static bool playing;
 static bool locked;
 static bool state_initialized;
+static bool command_failed;
+static uint32_t failure_tick;
 static int progress_bucket = -1;
 static int highlighted = -1;
 
@@ -62,7 +64,8 @@ static void restore_button_visual(int index)
             lv_obj_set_style_text_color(button_labels[index], lv_color_hex(MUSIC_GRAY), 0);
         }
     } else {
-        lv_obj_set_style_border_width(buttons[index], 0, 0);
+        lv_obj_set_style_border_width(buttons[index], 1, 0);
+        lv_obj_set_style_border_color(buttons[index], lv_color_hex(MUSIC_BORDER), 0);
         lv_obj_set_style_bg_opa(buttons[index], LV_OPA_TRANSP, 0);
         lv_obj_set_style_text_color(button_labels[index],
                                     lv_color_hex(media_present ? MUSIC_TEXT : MUSIC_GRAY), 0);
@@ -77,10 +80,11 @@ static void apply_state_visual(void)
                               lv_color_hex(media_present ? MUSIC_BLUE : MUSIC_GRAY), 0);
 
     if(state_label != NULL) {
-        if(!media_present) lv_label_set_text(state_label, "NO MEDIA");
+        if(command_failed) lv_label_set_text(state_label, "CONTROL FAILED");
+        else if(!media_present) lv_label_set_text(state_label, "NO MEDIA");
         else lv_label_set_text(state_label, playing ? "PLAYING" : "PAUSED");
         lv_obj_set_style_text_color(state_label,
-                                    lv_color_hex(media_present ? MUSIC_BLUE : MUSIC_SUBTEXT), 0);
+                                    lv_color_hex(command_failed ? 0xE59C88 : media_present ? MUSIC_BLUE : MUSIC_SUBTEXT), 0);
     }
 
     if(button_labels[1] != NULL) {
@@ -99,12 +103,28 @@ static void clear_feedback(lv_timer_t *timer)
     if(feedback_timer != NULL) lv_timer_pause(feedback_timer);
 }
 
+static void music_button_clicked(lv_event_t *event)
+{
+    int index = (int)(intptr_t)lv_event_get_user_data(event);
+    uint32_t key = index == 0 ? LV_KEY_LEFT : index == 1 ? LV_KEY_ENTER : LV_KEY_RIGHT;
+    s1_ui_music_v2_key_feedback(key);
+    s1_ui_key(key);
+}
+
+void s1_ui_music_v2_control_result(bool success)
+{
+    command_failed = !success;
+    failure_tick = lv_tick_get();
+    apply_state_visual();
+}
+
 static lv_obj_t *make_button(int index, int x, int y, int size, const char *symbol)
 {
     lv_obj_t *button = lv_obj_create(music_panel);
     lv_obj_set_size(button, size, size);
     lv_obj_set_pos(button, x, y);
     lv_obj_set_scrollable(button, false);
+    lv_obj_add_event_cb(button, music_button_clicked, LV_EVENT_CLICKED, (void *)(intptr_t)index);
     lv_obj_set_style_radius(button, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_pad_all(button, 0, 0);
 
@@ -276,7 +296,7 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_width(state_label, 150);
     lv_obj_set_pos(state_label, 10, 148);
     lv_obj_set_style_text_font(state_label, &lv_font_montserrat_10, 0);
-    lv_obj_set_style_text_letter_space(state_label, 2, 0);
+    lv_obj_set_style_text_letter_space(state_label, 1, 0);
     lv_obj_set_style_text_align(state_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(state_label, LV_LABEL_LONG_CLIP);
 
@@ -302,9 +322,9 @@ void s1_ui_music_v2_init(void)
     lv_obj_set_style_radius(progress_thumb, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(progress_thumb, lv_color_hex(MUSIC_BLUE), 0);
 
-    buttons[0] = make_button(0, 14, 222, 34, LV_SYMBOL_PREV);
+    buttons[0] = make_button(0, 12, 220, 38, LV_SYMBOL_PREV);
     buttons[1] = make_button(1, 60, 212, 50, LV_SYMBOL_PLAY);
-    buttons[2] = make_button(2, 122, 222, 34, LV_SYMBOL_NEXT);
+    buttons[2] = make_button(2, 120, 220, 38, LV_SYMBOL_NEXT);
 
     feedback_timer = lv_timer_create(clear_feedback, 180, NULL);
     lv_timer_pause(feedback_timer);
@@ -315,6 +335,10 @@ void s1_ui_music_v2_init(void)
 
 void s1_ui_music_v2_set_state(bool has_media, bool is_playing)
 {
+    if(command_failed && (uint32_t)(lv_tick_get() - failure_tick) >= 3000) {
+        command_failed = false;
+        state_initialized = false;
+    }
     bool new_playing = has_media && is_playing;
     if(state_initialized && media_present == has_media && playing == new_playing) return;
 

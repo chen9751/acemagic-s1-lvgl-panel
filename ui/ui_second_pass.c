@@ -12,6 +12,7 @@
 #define HA_FOOTER_TEXT "MENU  ENTER DEVICE"
 
 LV_FONT_DECLARE(s1_ui_font_14);
+LV_FONT_DECLARE(s1_ha_font_22);
 
 static lv_obj_t *ha_panel;
 static lv_obj_t *ha_title;
@@ -138,6 +139,7 @@ static void refine_ha_panel(lv_obj_t *root)
     lv_obj_set_size(ha_card, 140, 214);
     lv_obj_set_pos(ha_card, 15, 16);
     lv_obj_set_style_radius(ha_card, 18, 0);
+    lv_obj_set_style_bg_color(ha_card, lv_color_hex(0x101E2A), 0);
     lv_obj_set_style_border_width(ha_card, 2, 0);
     lv_obj_set_style_border_color(ha_card, lv_color_hex(UI_BLUE), 0);
 
@@ -151,14 +153,14 @@ static void refine_ha_panel(lv_obj_t *root)
     if(ha_source_name != NULL) lv_obj_set_hidden(ha_source_name, true);
 
     ha_name_overlay = lv_label_create(ha_card);
-    lv_obj_set_size(ha_name_overlay, 140, 22);
-    lv_obj_set_pos(ha_name_overlay, 0, 31);
+    lv_obj_set_size(ha_name_overlay, 136, 30);
+    lv_obj_set_pos(ha_name_overlay, 0, 27);
     lv_obj_set_style_text_align(ha_name_overlay, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(ha_name_overlay, &s1_ui_font_14, 0);
+    lv_obj_set_style_text_font(ha_name_overlay, &s1_ha_font_22, 0);
     lv_obj_set_style_text_color(ha_name_overlay, lv_color_hex(UI_TEXT), 0);
     lv_obj_set_style_transform_pivot_x(ha_name_overlay, 70, 0);
     lv_obj_set_style_transform_pivot_y(ha_name_overlay, 11, 0);
-    lv_obj_set_style_transform_scale(ha_name_overlay, 390, 0);
+
 
     ha_icon = lv_label_create(ha_card);
     lv_obj_set_size(ha_icon, 140, 24);
@@ -176,7 +178,7 @@ static void refine_ha_panel(lv_obj_t *root)
         lv_obj_set_style_text_font(ha_state, &lv_font_montserrat_20, 0);
         lv_obj_set_style_transform_pivot_x(ha_state, 70, 0);
         lv_obj_set_style_transform_pivot_y(ha_state, 14, 0);
-        lv_obj_set_style_transform_scale(ha_state, 360, 0);
+        lv_obj_set_style_text_font(ha_state, &lv_font_montserrat_24, 0);
     }
 
     /* The final HA page has one large card and one consistent MENU hint. */

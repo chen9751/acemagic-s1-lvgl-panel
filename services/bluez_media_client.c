@@ -13,6 +13,7 @@
 #define BLUEZ_COMMAND_OUTPUT_MAX 8192
 
 static char player_path[BLUEZ_PLAYER_PATH_MAX];
+static char control_path[BLUEZ_PLAYER_PATH_MAX];
 static bluez_media_state_t cached_state;
 static uint64_t next_poll_ms;
 
@@ -56,32 +57,51 @@ static int run_command(const char *command, char *output, size_t output_size)
     return status == 0 ? 0 : -1;
 }
 
+static bool decode_quoted_string(const char *start, char *dst, size_t dst_size);
+
 static int discover_player(void)
 {
     char output[BLUEZ_COMMAND_OUTPUT_MAX];
-    if(run_command("busctl --system --no-pager tree org.bluez 2>/dev/null", output, sizeof(output)) != 0) {
-        player_path[0] = '\0';
-        return -1;
-    }
+    player_path[0] = control_path[0] = '\0';
+    if(run_command("busctl --system --no-pager --list --timeout=1s tree org.bluez",
+                   output, sizeof(output)) != 0) return -1;
 
+    /* Resolve the addressed player of a connected AVRCP device, rather than
+     * accepting the first path containing /player (which may be a folder). */
     const char *cursor = output;
     while((cursor = strstr(cursor, "/org/bluez/")) != NULL) {
         const char *end = cursor;
-        while(*end != '\0' && !isspace((unsigned char)*end)) end++;
+        while(*end && !isspace((unsigned char)*end)) end++;
         size_t len = (size_t)(end - cursor);
-        if(len > 0 && len < sizeof(player_path)) {
-            char candidate[BLUEZ_PLAYER_PATH_MAX];
-            memcpy(candidate, cursor, len);
-            candidate[len] = '\0';
-            if(is_safe_object_path(candidate)) {
-                snprintf(player_path, sizeof(player_path), "%s", candidate);
-                return 0;
-            }
-        }
+        char device[BLUEZ_PLAYER_PATH_MAX];
+        if(len >= sizeof(device)) { cursor = end; continue; }
+        memcpy(device, cursor, len);
+        device[len] = '\0';
         cursor = end;
+        const char *dev = strstr(device, "/dev_");
+        if(dev == NULL || strchr(dev + 1, '/') != NULL) continue;
+        bool safe = true;
+        for(const unsigned char *c = (const unsigned char *)device; *c; c++)
+            if(!(isalnum(*c) || *c == '_' || *c == '/')) safe = false;
+        if(!safe) continue;
+        char command[640], property[512];
+        snprintf(command, sizeof(command),
+                 "busctl --system --no-pager --timeout=1s get-property org.bluez %s org.bluez.MediaControl1 Connected 2>/dev/null", device);
+        if(run_command(command, property, sizeof(property)) != 0 ||
+           strncmp(property, "b true", 6) != 0) continue;
+        snprintf(control_path, sizeof(control_path), "%s", device);
+        snprintf(command, sizeof(command),
+                 "busctl --system --no-pager --timeout=1s get-property org.bluez %s org.bluez.MediaControl1 Player 2>/dev/null", device);
+        if(run_command(command, property, sizeof(property)) == 0) {
+            const char *quoted = strchr(property, '"');
+            char candidate[BLUEZ_PLAYER_PATH_MAX];
+            if(decode_quoted_string(quoted, candidate, sizeof(candidate)) &&
+               is_safe_object_path(candidate) &&
+               strncmp(candidate, device, len) == 0 && candidate[len] == '/')
+                snprintf(player_path, sizeof(player_path), "%s", candidate);
+        }
+        return 0; /* MediaControl works even when optional Player is absent. */
     }
-
-    player_path[0] = '\0';
     return -1;
 }
 
@@ -167,19 +187,25 @@ static void clear_state(void)
 
 static int refresh_state(void)
 {
-    if(player_path[0] == '\0' && discover_player() != 0) {
+    if(control_path[0] == '\0' && discover_player() != 0) {
         clear_state();
         return -1;
     }
 
+    if(player_path[0] == '\0') {
+        cached_state.connected = true;
+        /* Try again on the next poll: the phone may register its player later. */
+        control_path[0] = '\0';
+        return 0;
+    }
     char command[640];
     char output[BLUEZ_COMMAND_OUTPUT_MAX];
     snprintf(command, sizeof(command),
-             "busctl --system --no-pager call %s %s org.freedesktop.DBus.Properties GetAll s %s 2>/dev/null",
+             "busctl --system --no-pager --timeout=1s call %s %s org.freedesktop.DBus.Properties GetAll s %s 2>/dev/null",
              BLUEZ_SERVICE, player_path, BLUEZ_PLAYER_IFACE);
 
     if(run_command(command, output, sizeof(output)) != 0) {
-        player_path[0] = '\0';
+        player_path[0] = control_path[0] = '\0';
         clear_state();
         return -1;
     }
@@ -206,7 +232,7 @@ static int refresh_state(void)
 
 int bluez_media_init(void)
 {
-    player_path[0] = '\0';
+    player_path[0] = control_path[0] = '\0';
     clear_state();
     next_poll_ms = 0;
     return 0;
@@ -230,36 +256,40 @@ void bluez_media_force_refresh(void)
 
 int bluez_media_control(bluez_media_action_t action)
 {
-    if(player_path[0] == '\0' && discover_player() != 0) return -1;
-
-    const char *method = NULL;
-    switch(action) {
-        case BLUEZ_MEDIA_PREVIOUS: method = "Previous"; break;
-        case BLUEZ_MEDIA_PLAY_PAUSE: method = cached_state.playing ? "Pause" : "Play"; break;
-        case BLUEZ_MEDIA_NEXT: method = "Next"; break;
-        default: return -1;
+    if(action < BLUEZ_MEDIA_PREVIOUS || action > BLUEZ_MEDIA_NEXT) return -1;
+    /* Re-resolve on an action: reconnection can change the addressed player. */
+    if(discover_player() != 0) {
+        fprintf(stderr, "Music: no connected Bluetooth media controller\n");
+        return -1;
     }
-
-    char command[512];
-    char output[256];
+    if(player_path[0] != '\0') refresh_state();
+    if(control_path[0] == '\0' && discover_player() != 0) return -1;
+    const char *method = action == BLUEZ_MEDIA_PREVIOUS ? "Previous" :
+                         action == BLUEZ_MEDIA_NEXT ? "Next" :
+                         cached_state.playing ? "Pause" : "Play";
+    char command[640], output[1024];
+    bool use_player = player_path[0] != '\0';
     snprintf(command, sizeof(command),
-             "busctl --system --no-pager call %s %s %s %s 2>/dev/null",
-             BLUEZ_SERVICE, player_path, BLUEZ_PLAYER_IFACE, method);
-
+             "busctl --system --no-pager --timeout=1s call %s %s %s %s 2>&1",
+             BLUEZ_SERVICE, use_player ? player_path : control_path,
+             use_player ? BLUEZ_PLAYER_IFACE : "org.bluez.MediaControl1", method);
     int rc = run_command(command, output, sizeof(output));
-    if(rc == 0) {
-        if(action == BLUEZ_MEDIA_PLAY_PAUSE) {
-            if(cached_state.playing) {
-                cached_state.playing = false;
-                cached_state.paused = true;
-            } else {
-                cached_state.playing = true;
-                cached_state.paused = false;
-            }
-        }
-        bluez_media_force_refresh();
-    } else {
-        player_path[0] = '\0';
+    /* Only retry explicit unsupported-method failures: never duplicate Next
+     * after a timeout, since the phone may already have executed it. */
+    if(rc != 0 && use_player &&
+       (strstr(output, "NotSupported") || strstr(output, "Not supported") ||
+        strstr(output, "UnknownMethod") || strstr(output, "UnknownInterface") ||
+        strstr(output, "not provided") || strstr(output, "No such interface"))) {
+        snprintf(command, sizeof(command),
+                 "busctl --system --no-pager --timeout=1s call %s %s org.bluez.MediaControl1 %s 2>&1",
+                 BLUEZ_SERVICE, control_path, method);
+        rc = run_command(command, output, sizeof(output));
     }
+    if(rc == 0 && action == BLUEZ_MEDIA_PLAY_PAUSE) {
+        cached_state.playing = strcmp(method, "Play") == 0;
+        cached_state.paused = !cached_state.playing;
+    }
+    if(rc != 0) fprintf(stderr, "Music %s failed: %s\n", method, output);
+    bluez_media_force_refresh();
     return rc;
 }

@@ -163,6 +163,7 @@ set(
     ui/fonts/s1_nunito_extrabold_108.c
     ui/fonts/s1_ui_font_14.c
     ui/fonts/s1_led_font_12.c
+    ui/fonts/s1_ha_font_22.c
 
     input/w1_input.c
 

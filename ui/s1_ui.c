@@ -267,6 +267,16 @@ static void refresh_light_states(bool force)
 
 static void update_led_visual(void)
 {
+    static int previous_mode = -1, previous_active = -1, previous_target = -1;
+    static int previous_intensity = -1, previous_speed = -1;
+    if(previous_mode == led_selected && previous_active == led_active &&
+       previous_target == led_adjust_target && previous_intensity == led_intensity &&
+       previous_speed == led_speed) return;
+    bool focus_changed = previous_target != led_adjust_target;
+    bool mode_changed = previous_mode != led_selected || previous_active != led_active;
+    previous_mode = led_selected; previous_active = led_active;
+    previous_target = led_adjust_target;
+    previous_intensity = led_intensity; previous_speed = led_speed;
     bool off = led_modes[led_selected] == LED_MODE_OFF;
     set_label_text_if_changed(led_mode_label, led_mode_names[led_selected]);
     char text[24];
@@ -274,18 +284,19 @@ static void update_led_visual(void)
     set_label_text_if_changed(led_index_label, text);
 
     uint32_t ring_color = off ? UI_OFF : (led_selected == led_active ? UI_BLUE : 0x875CFF);
-    lv_obj_set_style_border_color(led_ring, lv_color_hex(ring_color), 0);
+    if(mode_changed) lv_obj_set_style_border_color(led_ring, lv_color_hex(ring_color), 0);
 
     snprintf(text, sizeof(text), "亮度：%u/5", (unsigned)led_intensity);
     set_label_text_if_changed(led_intensity_label, text);
     snprintf(text, sizeof(text), "速度：%u/5", (unsigned)led_speed);
     set_label_text_if_changed(led_speed_label, text);
 
+    if(!focus_changed) return;
     bool intensity_selected = led_adjust_target == LED_ADJUST_INTENSITY;
     bool speed_selected = led_adjust_target == LED_ADJUST_SPEED;
-    lv_obj_set_style_border_width(led_intensity_box, intensity_selected ? 2 : 1, 0);
+    lv_obj_set_style_border_width(led_intensity_box, 1, 0);
     lv_obj_set_style_border_color(led_intensity_box, lv_color_hex(intensity_selected ? UI_BLUE : 0x23435A), 0);
-    lv_obj_set_style_border_width(led_speed_box, speed_selected ? 2 : 1, 0);
+    lv_obj_set_style_border_width(led_speed_box, 1, 0);
     lv_obj_set_style_border_color(led_speed_box, lv_color_hex(speed_selected ? UI_BLUE : 0x23435A), 0);
     lv_obj_set_style_text_color(led_intensity_label, lv_color_hex(intensity_selected ? UI_BLUE : UI_TEXT), 0);
     lv_obj_set_style_text_color(led_speed_label, lv_color_hex(speed_selected ? UI_BLUE : UI_TEXT), 0);
@@ -562,7 +573,7 @@ static void create_led_ui(void)
     lv_obj_align(led_ring, LV_ALIGN_TOP_MID, 0, 22);
     lv_obj_set_scrollable(led_ring, false);
     lv_obj_set_style_radius(led_ring, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(led_ring, 7, 0);
+    lv_obj_set_style_border_width(led_ring, 5, 0);
     lv_obj_set_style_bg_color(led_ring, lv_color_hex(0x08121A), 0);
     lv_obj_set_style_bg_opa(led_ring, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(led_ring, 0, 0);

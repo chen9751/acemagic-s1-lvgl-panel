@@ -12,6 +12,7 @@ set(CONFIG_LV_USE_THORVG_INTERNAL OFF CACHE BOOL "" FORCE)
 add_subdirectory("${PROJECT_SOURCE_DIR}/lvgl" "${CMAKE_CURRENT_BINARY_DIR}/lvgl")
 add_executable(s1_ui_tests test_ui.c
     ../ui/ui_second_pass.c ../ui/pages/ui_music_v2.c
+    ../ui/fonts/s1_ha_font_22.c ../ui/pages/ui_home_v3.c
     ../ui/s1_ui.c ../ui/ui_router.c ../ui/pages/ui_page.c ../ui/pages/ui_light.c
     ../ui/fonts/s1_home_info_font_14.c ../ui/fonts/s1_home_time_font_108.c
     ../ui/fonts/s1_ui_font_14.c ../ui/fonts/s1_led_font_12.c
@@ -21,3 +22,9 @@ target_link_libraries(s1_ui_tests PRIVATE lvgl m)
 # Keep assertions active in Release builds too.
 target_compile_options(s1_ui_tests PRIVATE -Wall -Wextra -Werror -UNDEBUG)
 add_test(NAME s1_ui_interaction COMMAND s1_ui_tests)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_library(s1_bluez_test SHARED ../services/bluez_media_client.c)
+target_compile_options(s1_bluez_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME s1_bluez_control COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_bluez.py" "$<TARGET_FILE:s1_bluez_test>")

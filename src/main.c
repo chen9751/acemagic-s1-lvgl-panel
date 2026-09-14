@@ -49,7 +49,7 @@ static void music_action_cb(s1_music_action_t action, void *user_data)
     bluez_media_action_t bluez_action = BLUEZ_MEDIA_PLAY_PAUSE;
     if(action == S1_MUSIC_ACTION_PREVIOUS) bluez_action = BLUEZ_MEDIA_PREVIOUS;
     else if(action == S1_MUSIC_ACTION_NEXT) bluez_action = BLUEZ_MEDIA_NEXT;
-    if(bluez_media_control(bluez_action) != 0) printf("BlueZ media action failed\n");
+    s1_ui_music_v2_control_result(bluez_media_control(bluez_action) == 0);
 }
 
 static void sync_music_from_bluez(void)

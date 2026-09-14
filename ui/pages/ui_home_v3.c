@@ -11,7 +11,7 @@
 #define HOME_MUTED     0x73818C
 #define HOME_WARM      0xFFD05A
 #define HOME_CARD      0x101C27
-#define HOME_SELECTED  0x11364B
+#define HOME_SELECTED  0x123247
 #define HOME_BG_TOP    0x07111A
 #define HOME_BG_BOTTOM 0x02070B
 
@@ -195,10 +195,11 @@ static void update_cards(void)
 
     if(selected != last_selected) {
         for(int i = 0; i < 4; i++) {
+            if(last_selected >= 0 && i != selected && i != last_selected) continue;
             bool active = i == selected;
             lv_obj_set_style_bg_color(cards[i], lv_color_hex(active ? HOME_SELECTED : HOME_CARD), 0);
-            lv_obj_set_style_border_width(cards[i], active ? 1 : 0, 0);
-            lv_obj_set_style_border_color(cards[i], lv_color_hex(HOME_BLUE), 0);
+            lv_obj_set_style_border_width(cards[i], 1, 0);
+            lv_obj_set_style_border_color(cards[i], lv_color_hex(active ? HOME_BLUE : 0x21313F), 0);
         }
         last_selected = selected;
     }
@@ -222,7 +223,9 @@ static void refresh_cb(lv_timer_t *timer)
     set_hidden_if_changed(overlay, !home);
     if(!home) return;
 
-    lv_obj_move_foreground(overlay);
+    /* Reordering a visible full-screen overlay invalidates the entire page. */
+    if(lv_obj_get_child(lv_screen_active(), -1) != overlay)
+        lv_obj_move_foreground(overlay);
     update_clock();
     update_cards();
 }

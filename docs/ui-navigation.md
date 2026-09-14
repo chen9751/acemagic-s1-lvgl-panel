@@ -41,3 +41,22 @@ use real LVGL with HA/LED service doubles, and render 170 × 320 PPM frames.
 They cover vertical navigation, HA labels, LED focus/limits/write failure,
 Music state and dispatch, and Home clock centering. Physical LCD, serial LED,
 Bluetooth and HA integration must also be checked on the S1 device.
+
+## Music control compatibility
+
+The BlueZ client resolves the connected MediaControl1 device and its optional
+addressed Player property before controlling playback. It uses MediaPlayer1
+when available, with MediaControl1 as a compatibility path when Player is absent
+or explicitly unsupported. It does not replay a Next/Previous command after an
+ambiguous timeout. Bus calls have a one-second timeout and errors are logged;
+the Music status briefly shows CONTROL FAILED for a failed action.
+The three simulator buttons use the same action owner as W1 keys.
+
+References: https://github.com/bluez/bluez/blob/master/doc/org.bluez.MediaControl.rst
+and https://github.com/bluez/bluez/blob/master/doc/org.bluez.MediaPlayer.rst.
+
+Visual changes preserve page positions and navigation. HA names use a native
+22-pixel font. Home selection updates only old/new cards; LED value updates do
+not restyle the mode circle. No continuous animation was added. Tests measure
+partial flush regions and exercise real subprocess commands with a fake busctl;
+Bluetooth playback on the physical iPad remains a hardware validation step.

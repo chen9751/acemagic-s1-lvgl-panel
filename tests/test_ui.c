@@ -1,6 +1,7 @@
 #include "ui/s1_ui.h"
 #include "ui/ui_router.h"
 #include "ui/pages/ui_home_overlay.h"
+#include "ui/pages/ui_home_v3.h"
 #include "ui/pages/ui_music_v2.h"
 #include "ui/ui_second_pass.h"
 #include "input/s1_input_dispatch.h"
@@ -52,8 +53,11 @@ static void go(s1_page_id_t page)
     assert(s1_ui_router_current() == page);
 }
 static unsigned char pixels[170 * 320 * 3];
+static int dirty_pixels, dirty_top = 320;
 static void flush(lv_display_t *display, const lv_area_t *area, uint8_t *data)
 {
+    dirty_pixels += (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
+    if(area->y1 < dirty_top) dirty_top = area->y1;
     int stride = (area->x2 - area->x1 + 1) * 3;
     for(int y = area->y1; y <= area->y2; y++) {
         for(int x = area->x1; x <= area->x2; x++) {
@@ -121,7 +125,7 @@ int main(void)
     lv_display_t *display = lv_display_create(170, 320);
     static unsigned char buffer[170 * 320 * 3];
     lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB888);
-    lv_display_set_buffers(display, buffer, NULL, sizeof(buffer), LV_DISPLAY_RENDER_MODE_FULL);
+    lv_display_set_buffers(display, buffer, NULL, sizeof(buffer), LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(display, flush);
     s1_ui_init();
     s1_ui_music_set_action_cb(music, NULL);
@@ -201,11 +205,32 @@ int main(void)
     s1_input_dispatch_key(LV_KEY_RIGHT); assert(last_action == S1_MUSIC_ACTION_NEXT);
     s1_input_dispatch_key(LV_KEY_ENTER); assert(last_action == S1_MUSIC_ACTION_PLAY_PAUSE);
     assert(music_calls == 3);
+    lv_obj_t *next_icon = label(lv_screen_active(), LV_SYMBOL_NEXT);
+    assert(next_icon);
+    lv_obj_send_event(lv_obj_get_parent(next_icon), LV_EVENT_CLICKED, NULL);
+    assert(music_calls == 4 && last_action == S1_MUSIC_ACTION_NEXT);
+    s1_ui_music_v2_control_result(false); visible("CONTROL FAILED");
+    s1_ui_music_v2_control_result(true); visible("PLAYING");
     s1_ui_music_v2_set_progress(50, 100);
     snapshot("music-playing.ppm");
     go(S1_PAGE_HOME);
     puts("PASS: vertical navigation, HA sync, LED focus/limits/failures, Music state and dispatch");
     test_home_clock();
+    s1_ui_home_v3_init();
+    snapshot("home-v3.ppm");
+    /* A stationary Home tick must not redraw the full overlay. */
+    dirty_pixels = 0;
+    lv_tick_inc(160); lv_timer_handler(); lv_refr_now(NULL);
+    assert(dirty_pixels < 170 * 320);
+    go(S1_PAGE_LED);
+    lv_tick_inc(200); lv_timer_handler(); lv_refr_now(NULL);
+    s1_input_dispatch_key(S1_KEY_MENU);
+    lv_refr_now(NULL);
+    dirty_pixels = 0; dirty_top = 320;
+    s1_input_dispatch_key(LV_KEY_LEFT);
+    lv_refr_now(NULL);
+    assert(dirty_pixels > 0 && dirty_pixels < 170 * 100 && dirty_top >= 180);
+    printf("PASS: LED adjustment flushed %d pixels, top=%d (no circle redraw)\n", dirty_pixels, dirty_top);
     lv_deinit();
     return 0;
 }
